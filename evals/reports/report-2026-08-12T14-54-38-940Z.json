@@ -1,0 +1,140 @@
+{
+  "generatedAt": "2026-08-12T14:54:38.940Z",
+  "caveat": "Directional harness demonstration with scripted mock agents. Not a statistically significant evaluation; per PRD 14.3, conclusions require 15-30 real historical tasks.",
+  "fixtures": [
+    "migration-approach",
+    "sync-vs-events"
+  ],
+  "results": [
+    {
+      "fixtureId": "migration-approach",
+      "condition": "A",
+      "decided": true,
+      "decisionLabel": "A",
+      "criticalIssuesFound": [],
+      "criticalIssueRecall": 0,
+      "uniqueValidClaims": 0,
+      "evidenceCoverage": 0,
+      "contextLeaks": 0,
+      "falseConsensus": false,
+      "timeMs": 0,
+      "cost": 0,
+      "positions": 1
+    },
+    {
+      "fixtureId": "migration-approach",
+      "condition": "B",
+      "decided": true,
+      "decisionLabel": "B",
+      "criticalIssuesFound": [
+        "strangler",
+        "feature flag",
+        "shadow traffic"
+      ],
+      "criticalIssueRecall": 1,
+      "uniqueValidClaims": 4,
+      "evidenceCoverage": 0,
+      "contextLeaks": 0,
+      "falseConsensus": false,
+      "timeMs": 0,
+      "cost": 0,
+      "positions": 2
+    },
+    {
+      "fixtureId": "migration-approach",
+      "condition": "C",
+      "decided": true,
+      "decisionLabel": "A",
+      "criticalIssuesFound": [
+        "strangler",
+        "feature flag",
+        "shadow traffic"
+      ],
+      "criticalIssueRecall": 1,
+      "uniqueValidClaims": 4,
+      "evidenceCoverage": 0,
+      "contextLeaks": 0,
+      "falseConsensus": false,
+      "timeMs": 15,
+      "cost": 0,
+      "positions": 2
+    },
+    {
+      "fixtureId": "sync-vs-events",
+      "condition": "A",
+      "decided": true,
+      "decisionLabel": "A",
+      "criticalIssuesFound": [
+        "transaction boundary",
+        "rollback"
+      ],
+      "criticalIssueRecall": 0.6666666666666666,
+      "uniqueValidClaims": 0,
+      "evidenceCoverage": 0,
+      "contextLeaks": 0,
+      "falseConsensus": false,
+      "timeMs": 0,
+      "cost": 0,
+      "positions": 1
+    },
+    {
+      "fixtureId": "sync-vs-events",
+      "condition": "B",
+      "decided": true,
+      "decisionLabel": "B",
+      "criticalIssuesFound": [
+        "transaction boundary",
+        "rollback"
+      ],
+      "criticalIssueRecall": 0.6666666666666666,
+      "uniqueValidClaims": 4,
+      "evidenceCoverage": 0,
+      "contextLeaks": 0,
+      "falseConsensus": true,
+      "timeMs": 0,
+      "cost": 0,
+      "positions": 2
+    },
+    {
+      "fixtureId": "sync-vs-events",
+      "condition": "C",
+      "decided": true,
+      "decisionLabel": "B",
+      "criticalIssuesFound": [
+        "transaction boundary",
+        "rollback"
+      ],
+      "criticalIssueRecall": 0.6666666666666666,
+      "uniqueValidClaims": 4,
+      "evidenceCoverage": 0,
+      "contextLeaks": 0,
+      "falseConsensus": false,
+      "timeMs": 6,
+      "cost": 0,
+      "positions": 2
+    }
+  ],
+  "summary": [
+    {
+      "condition": "A",
+      "avgCriticalIssueRecall": 0.333,
+      "avgEvidenceCoverage": 0,
+      "totalContextLeaks": 0,
+      "avgUniqueValidClaims": 0
+    },
+    {
+      "condition": "B",
+      "avgCriticalIssueRecall": 0.833,
+      "avgEvidenceCoverage": 0,
+      "totalContextLeaks": 0,
+      "avgUniqueValidClaims": 4
+    },
+    {
+      "condition": "C",
+      "avgCriticalIssueRecall": 0.833,
+      "avgEvidenceCoverage": 0,
+      "totalContextLeaks": 0,
+      "avgUniqueValidClaims": 4
+    }
+  ]
+}

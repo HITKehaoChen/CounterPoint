@@ -1,0 +1,57 @@
+{
+  "id": "migration-approach",
+  "problem": "Which migration approach fits the legacy monolith API?",
+  "goals": ["Deliver incrementally without a big-bang cutover"],
+  "constraints": ["No downtime window", "Existing clients keep working"],
+  "rubric": {
+    "items": [
+      { "id": "safety", "name": "Rollback safety", "weight": 1 },
+      { "id": "effort", "name": "Incremental effort", "weight": 0.7 }
+    ],
+    "maxScore": 5
+  },
+  "sourceText": "legacy API serves 200 clients; no feature flags; weekly release cadence",
+  "groundTruth": {
+    "decision": "B",
+    "criticalIssues": ["strangler", "feature flag", "shadow traffic"]
+  },
+  "workerA": {
+    "summary": "Rewrite the API in one release.",
+    "claims": [
+      { "id": "mg-a-1", "statement": "A single rewrite minimizes coordination overhead.", "type": "preference", "evidenceRefs": [], "confidence": 0.6 },
+      { "id": "mg-a-2", "statement": "The team can freeze clients for the cutover.", "type": "fact", "evidenceRefs": [], "confidence": 0.4 }
+    ],
+    "unknowns": ["Client freeze feasibility"],
+    "confidence": 0.55,
+    "artifacts": [{ "logicalName": "big-bang-design", "type": "markdown", "content": "# Big bang" }],
+    "model": "eval-model-a"
+  },
+  "workerB": {
+    "summary": "Strangler-fig migration behind a feature flag with shadow traffic.",
+    "claims": [
+      { "id": "mg-b-1", "statement": "A strangler pattern lets clients migrate incrementally.", "type": "design", "evidenceRefs": [], "confidence": 0.8 },
+      { "id": "mg-b-2", "statement": "Feature flags plus shadow traffic give rollback safety without downtime.", "type": "fact", "evidenceRefs": [], "confidence": 0.75 }
+    ],
+    "unknowns": ["Traffic replication cost"],
+    "decisionConditions": ["If shadow traffic exceeds 2x cost, gate rollout"],
+    "confidence": 0.77,
+    "artifacts": [{ "logicalName": "strangler-design", "type": "markdown", "content": "# Strangler" }],
+    "model": "eval-model-b"
+  },
+  "workerAShared": {
+    "summary": "I agree with B; let us ship the strangler.",
+    "claims": [
+      { "id": "mg-as-1", "statement": "B's plan is acceptable.", "type": "preference", "evidenceRefs": [], "confidence": 0.6 },
+      { "id": "mg-as-2", "statement": "No additional risks.", "type": "risk", "evidenceRefs": [], "confidence": 0.4 }
+    ],
+    "unknowns": [],
+    "confidence": 0.6,
+    "artifacts": [],
+    "model": "eval-model-a"
+  },
+  "reviewer": {
+    "recommendation": "candidate_b",
+    "rationale": "B satisfies the no-downtime constraint; A cannot.",
+    "evidenceSufficiency": "sufficient"
+  }
+}

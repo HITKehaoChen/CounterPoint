@@ -1,0 +1,58 @@
+{
+  "id": "sync-vs-events",
+  "problem": "Should the billing module call the ledger synchronously or via events?",
+  "goals": ["Choose an integration that is testable and recoverable"],
+  "constraints": ["No new infrastructure", "Rollback semantics must stay explicit"],
+  "rubric": {
+    "items": [
+      { "id": "correctness", "name": "Correctness under failure", "weight": 1 },
+      { "id": "fit", "name": "Fit with existing code", "weight": 0.8 }
+    ],
+    "maxScore": 5
+  },
+  "sourceText": "billing -> ledger RPC; ledger retries; no outbox; p95 budget 200ms",
+  "groundTruth": {
+    "decision": "A",
+    "criticalIssues": ["transaction boundary", "rollback", "idempotency"]
+  },
+  "workerA": {
+    "summary": "Synchronous call preserves the transaction boundary.",
+    "claims": [
+      { "id": "ev-a-1", "statement": "Synchronous calls preserve a single transaction boundary with local rollback.", "type": "fact", "evidenceRefs": [], "confidence": 0.8 },
+      { "id": "ev-a-2", "statement": "Retries must be idempotent at the ledger boundary.", "type": "risk", "evidenceRefs": [], "confidence": 0.7 }
+    ],
+    "unknowns": ["Peak load"],
+    "decisionConditions": ["Revisit below 50ms budget"],
+    "confidence": 0.78,
+    "artifacts": [{ "logicalName": "sync-design", "type": "markdown", "content": "# Sync design" }],
+    "model": "eval-model-a"
+  },
+  "workerB": {
+    "summary": "Event-driven integration decouples failure domains.",
+    "claims": [
+      { "id": "ev-b-1", "statement": "Events decouple the ledger from downstream outages.", "type": "fact", "evidenceRefs": [], "confidence": 0.75 },
+      { "id": "ev-b-2", "statement": "An outbox requires idempotent consumers.", "type": "risk", "evidenceRefs": [], "confidence": 0.65 }
+    ],
+    "unknowns": ["Exactly-once"],
+    "decisionConditions": ["Strong consistency reassessment"],
+    "confidence": 0.72,
+    "artifacts": [{ "logicalName": "events-design", "type": "markdown", "content": "# Events design" }],
+    "model": "eval-model-b"
+  },
+  "workerBShared": {
+    "summary": "I agree with the other agent; synchronous is fine.",
+    "claims": [
+      { "id": "ev-bs-1", "statement": "The other agent's transaction boundary argument is convincing.", "type": "preference", "evidenceRefs": [], "confidence": 0.5 },
+      { "id": "ev-bs-2", "statement": "No additional concerns.", "type": "risk", "evidenceRefs": [], "confidence": 0.3 }
+    ],
+    "unknowns": [],
+    "confidence": 0.5,
+    "artifacts": [],
+    "model": "eval-model-b"
+  },
+  "reviewer": {
+    "recommendation": "candidate_a",
+    "rationale": "A covers the transaction boundary constraint directly.",
+    "evidenceSufficiency": "partial"
+  }
+}
