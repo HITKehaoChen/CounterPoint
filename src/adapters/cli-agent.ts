@@ -5,9 +5,16 @@ import { resolveArgument, resolveExecutable } from './command.ts';
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from './agent.ts';
 import { extractJsonPayload, parseAgentResultJson } from './output.ts';
 import { renderAgentPrompt } from './prompt.ts';
+import {
+  estimateCostUsd,
+  extractChrysResult,
+  extractClaudeResult,
+  type CliMeta,
+  type CostEstimateRates,
+} from './cli-meta.ts';
 import type { AgentFingerprint } from '../schemas.ts';
 
-export type CliOutputMode = 'json_stdout' | 'json_file' | 'codex_jsonl' | 'claude_jsonl';
+export type CliOutputMode = 'json_stdout' | 'json_file' | 'codex_jsonl' | 'claude_jsonl' | 'chrys_json';
 
 export interface CliAgentConfig {
   /** CLI executable, e.g. "codex", "claude", or a test script. */
@@ -25,6 +32,14 @@ export interface CliAgentConfig {
   model?: string;
   provider?: string;
   env?: Record<string, string>;
+  /** Append the rendered prompt as the final CLI argument (for CLIs that take the prompt positionally). */
+  promptTextAsArg?: boolean;
+  /** Write the rendered prompt to the child's stdin instead of passing it as an argument. */
+  promptViaStdin?: boolean;
+  /** Explicit token-to-USD rates used to estimate cost when the CLI does not report billing. */
+  costEstimateRates?: CostEstimateRates;
+  /** Chrys session/state root (defaults to %APPDATA%); only used with outputMode "chrys_json". */
+  chrysStateDir?: string;
 }
 
 /**
@@ -37,6 +52,7 @@ export interface CliAgentConfig {
  * - json_file: agent writes {outputFile} into the workspace
  * - codex_jsonl: `codex exec --json` style JSONL events
  * - claude_jsonl: `claude -p --output-format json` style events
+ * - chrys_json: `chrys run --json` style single JSON result
  */
 export class CliAgentAdapter implements AgentAdapter {
   readonly name = 'cli-agent';
@@ -56,15 +72,19 @@ export class CliAgentAdapter implements AgentAdapter {
         .replaceAll('{runId}', input.runId)
         .replaceAll('{participantId}', input.participantId),
     );
-    const { stdout, stderr } = await runProcess({
+    if (this.config.promptTextAsArg) args.push(renderAgentPrompt(input));
+    const stdinText = this.config.promptViaStdin ? renderAgentPrompt(input) : undefined;
+    const { stdout, stderr } = await runCliProcess({
       command: this.config.command,
       args,
       cwd: input.workspacePath,
       timeoutMs: this.config.timeoutMs ?? 120_000,
       env: this.config.env,
+      stdinText,
     });
     const outputMode = this.config.outputMode ?? 'json_stdout';
     let parsed;
+    let meta: CliMeta = {};
     if (outputMode === 'json_file') {
       const outputPath = join(input.workspacePath, this.config.outputFile ?? 'agent-output.json');
       if (!existsSync(outputPath)) {
@@ -76,24 +96,39 @@ export class CliAgentAdapter implements AgentAdapter {
     } else if (outputMode === 'codex_jsonl') {
       parsed = parseAgentResultJson(extractJsonPayload(collectCodexText(stdout)));
     } else if (outputMode === 'claude_jsonl') {
-      parsed = parseAgentResultJson(extractJsonPayload(collectClaudeText(stdout)));
+      const claude = extractClaudeResult(stdout);
+      parsed = parseAgentResultJson(extractJsonPayload(claude.text));
+      meta = claude.meta;
+    } else if (outputMode === 'chrys_json') {
+      const chrys = extractChrysResult(stdout, {
+        stateDir: this.config.chrysStateDir,
+        rates: this.config.costEstimateRates,
+      });
+      parsed = parseAgentResultJson(extractJsonPayload(chrys.text));
+      meta = chrys.meta;
     } else {
       throw new Error(`Unknown CLI output mode: ${outputMode}`);
     }
+    const cost =
+      meta.costUsd ?? estimateCostUsd(meta.usage, this.config.costEstimateRates) ?? 0;
     const fingerprint: AgentFingerprint = {
       adapter: this.name,
-      model: this.config.model ?? this.config.command,
-      provider: this.config.provider ?? 'cli',
+      model: meta.model ?? this.config.model ?? this.config.command,
+      provider: meta.provider ?? this.config.provider ?? 'cli',
       promptVersion: this.config.promptVersion ?? 'counterpoint-prompt-1',
       toolset: ['cli_process'],
       contextViewHash: input.contextView.hash,
     };
+    const usageText = meta.usage
+      ? `usage=${JSON.stringify(meta.usage)}`
+      : 'usage=n/a';
+    const durationText = meta.durationMs !== undefined ? `durationMs=${meta.durationMs}` : 'durationMs=n/a';
     return {
       position: parsed.position,
       artifacts: parsed.artifacts,
       fingerprint,
-      logs: `cli=${this.config.command} mode=${outputMode} stdout=${stdout.length} bytes stderr=${stderr.length} bytes`,
-      cost: 0,
+      logs: `cli=${this.config.command} mode=${outputMode} stdout=${stdout.length} bytes stderr=${stderr.length} bytes ${durationText} ${usageText} cost=${cost}`,
+      cost,
     };
   }
 }
@@ -119,45 +154,33 @@ function collectCodexText(stdout: string): string {
   return parts.join('\n');
 }
 
-function collectClaudeText(stdout: string): string {
-  const parts: string[] = [];
-  for (const line of stdout.split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    let event: Record<string, unknown>;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (event.type === 'error') {
-      throw new Error(`claude error: ${JSON.stringify(event.error ?? event)}`);
-    }
-    if (event.type === 'result' && typeof event.result === 'string') {
-      parts.push(event.result);
-    }
-  }
-  return parts.join('\n');
-}
-
-async function runProcess(input: {
+export async function runCliProcess(input: {
   command: string;
   args: string[];
   cwd: string;
   timeoutMs: number;
   env?: Record<string, string>;
+  stdinText?: string;
 }): Promise<{ stdout: string; stderr: string }> {
   const child = spawn(resolveExecutable(input.command), input.args.map(resolveArgument), {
     cwd: input.cwd,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: input.stdinText !== undefined ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, ...(input.env ?? {}) },
     shell: false,
   });
+  if (input.stdinText !== undefined) {
+    const stdinStream = child.stdin!;
+    stdinStream.on('error', () => undefined);
+    stdinStream.end(input.stdinText, 'utf8');
+  }
   let stdout = '';
   let stderr = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => (stdout += chunk));
-  child.stderr.on('data', (chunk: string) => (stderr += chunk));
+  const stdoutStream = child.stdout!;
+  const stderrStream = child.stderr!;
+  stdoutStream.setEncoding('utf8');
+  stderrStream.setEncoding('utf8');
+  stdoutStream.on('data', (chunk: string) => (stdout += chunk));
+  stderrStream.on('data', (chunk: string) => (stderr += chunk));
   const finished = new Promise<number>((resolve, reject) => {
     child.on('error', reject);
     child.on('close', (code) => resolve(code ?? -1));

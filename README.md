@@ -30,6 +30,9 @@ npm test            # 57 项测试：单元 + 泄漏证明 + 15 个端到端固�
 npm run demo        # 端到端演示（两个 Mock Worker），导出 data/out/decision-pack.md/json
 npm run demo -- --local # 或: node apps/cli/main.ts demo --local（Worker A 走本地进程 Adapter）
 npm run eval        # A/B/C 对照实验脚手架，报告输出到 evals/reports/
+npm run slice:real  # 真实 Agent M1 切片（Chrys + Claude Code + 独立 Reviewer），产物见 docs/m1-real-slice/
+npm run dev         # 启动 Web Console（API 8787 + Vite 5173，热更新）
+npm run start       # 构建前端并由 API 服务在 8787 端口统一托管
 ```
 
 真实 Coding Agent 连通性探测（需要本机已安装并配置好对应 CLI）：
@@ -56,6 +59,23 @@ node apps/cli/main.ts export <dbPath> <deliberationId> [outDir]
 node apps/cli/main.ts probe acp|cli <command> [args...]
 ```
 
+## Web Console
+
+Web Console 按 PRD 10.1 的工作空间模型实现：Workspace（常驻工作空间）→ WorkItem
+（问题/需求/Bug/假设/技术决策）→ Research Round（可选深度研究）。默认使用 Mock
+Worker/Reviewer 跑通完整协议闭环，可在 Round 创建时把 Worker 切换为本地进程适配器。
+
+```bash
+npm run dev      # 开发模式：Node API（http://localhost:8787）+ Vite（http://localhost:5173）
+npm run start    # 生产模式：构建前端并由 API 服务统一托管 http://localhost:8787
+```
+
+数据默认写入 `data/store.json`（可用 `COUNTERPOINT_DB` 覆盖），Agent 工作区位于
+`data/workspaces/`。界面遵循 PRD 10.2：盲态阶段只显示运行状态与承诺哈希，不展示候选
+正文；披露后以“候选 X/候选 Y”匿名展示；证据状态以图标 + 文字标注；未解决分歧在
+Decision 视图显式列出。运行状态通过 SSE（`/api/stream`）实时推送，断开时前端自动
+轮询兜底。旧地址 `/projects/...`、`/deliberations/:id` 会自动重定向到新模型路由。
+
 ## 架构
 
 ```text
@@ -78,6 +98,8 @@ counterpoint/
 ├── apps/
 │   ├── cli/main.ts            # CLI 入口
 │   ├── cli/demo.ts            # 端到端演示
+│   ├── api/                   # Web Console API（REST + SSE + 后台任务）
+│   ├── web/                   # Web Console（React + Vite SPA）
 │   └── worker-sample.mjs      # 本地进程 Worker 示例
 ├── evals/
 │   ├── fixtures/              # 固定历史任务（可扩展）
@@ -120,7 +142,7 @@ stateDiagram-v2
 
 ## 当前边界（与 PRD 的差距）
 
-- **Web Console 未实现**：当前以 CLI + 可编程引擎为主，Console 界面属于 M1 后续工作。
+- **Web Console 已实现（v1）**：覆盖 PRD 10.1 四个页面与 10.2 展示原则；默认 Mock 适配器，可切换本地进程/CLI/ACP 适配器。
 - **持久化**为单文件 JSON（Local-first 的简化形态）；生产化可换 Postgres + 文件/Git 存储（PRD 11.2）。
 - **评估**目前是脚本化 Mock Agent 的方向性脚手架，不是 PRD 14.3 要求的 15–30 个真实历史任务的统计结论。
 - CLI Agent 与 ACP Adapter 已实现并通过假服务器/假 CLI 测试；接入真实 Codex/Claude Code 仍需本机认证与各 CLI 实际参数确认。
@@ -128,8 +150,8 @@ stateDiagram-v2
 ## 里程碑路线（按 PRD 第 16 节）
 
 - ✅ **M0 Protocol Kernel**（当前已完成）：状态机、Context Policy、Commit–Reveal、Artifact Registry、Mock/CLI/ACP Adapter、泄漏证明、CLI/最小 API 演示、评估脚手架。
-- ▶ **M1 Vertical Slice（下一个）**：跑通一个真实的 Technical Decision Review——Web 创建任务、两个本地 Agent Runner（现在可用 CLI/ACP 接真实 Agent）、独立 workspace、Commit–Reveal、Artifact Registry、基础 Timeline。
-- ⬜ **M2 Evidence & Review**：把“多个答案”升级为“证据化裁决”（Claim/Challenge/Evidence 完善、命令 Verifier、匿名 Reviewer、Human Gate、Decision Pack 的界面化）。
+- ✅ **M1 Vertical Slice**：Web 创建任务、两个隔离 Worker、Commit–Reveal、Artifact Registry、Timeline 已界面化（默认 Mock，可接本地进程/CLI/ACP）；并已用真实 Agent（Chrys + Claude Code + 独立 Reviewer）跑通第一份真实 Decision Pack，见 [docs/m1-real-slice/](docs/m1-real-slice/)。
+- ▶ **M2 Evidence & Review（下一个）**：把“多个答案”升级为“证据化裁决”——引擎能力已具备，补齐真实模型 Reviewer 与更完整的界面化验证/评审体验。
 - ⬜ **M3 Evaluation**：15–30 个真实历史任务的 A/B/C 对照实验与指标报表。
 
 ## 运行示例

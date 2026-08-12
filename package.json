@@ -12,15 +12,35 @@
     "test": "node --test \"tests/**/*.test.ts\"",
     "test:unit": "node --test \"tests/unit/**/*.test.ts\"",
     "test:integration": "node --test \"tests/integration/**/*.test.ts\"",
+    "test:api": "node --test \"tests/api/**/*.test.ts\"",
+    "test:web": "vitest run --config apps/web/vite.config.ts",
+    "dev:api": "node --watch apps/api/server.ts",
+    "dev:web": "vite --config apps/web/vite.config.ts",
+    "dev": "concurrently -k -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "build:web": "vite build --config apps/web/vite.config.ts",
+    "start": "npm run build:web && node apps/api/server.ts",
     "demo": "node apps/cli/demo.ts",
     "cli": "node apps/cli/main.ts",
+    "slice:real": "node apps/cli/real-slice.ts",
     "eval": "node evals/eval-run.ts"
   },
   "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^22.10.2",
-    "typescript": "^5.9.2"
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "concurrently": "^10.0.4",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.9.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
   }
 }

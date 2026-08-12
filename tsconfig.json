@@ -3,7 +3,8 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
@@ -13,5 +14,5 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "apps/**/*.ts", "tests/**/*.ts", "evals/**/*.ts"]
+  "include": ["src/**/*.ts", "apps/**/*.ts", "apps/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", "evals/**/*.ts"]
 }

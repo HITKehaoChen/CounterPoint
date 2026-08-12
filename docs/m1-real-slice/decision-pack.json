@@ -1,0 +1,1095 @@
+{
+  "formatVersion": "0.1.0",
+  "deliberationId": "delib_msq9tftf_29278556c2",
+  "protocolVersion": "0.1.0",
+  "state": "decided",
+  "createdAt": "2026-08-12T15:55:26.163Z",
+  "decidedAt": "2026-08-12T16:04:05.916Z",
+  "taskPacket": {
+    "id": "tp_msq9tftf_553a1a2758",
+    "version": 1,
+    "problem": "CounterPoint Web Console 当前通过 /api/stream（SSE）+ 5 秒轮询兜底获取实时状态。M1 需要一个真实技术决策：实时更新通道应保持 SSE（现状）、改用 WebSocket，还是退化为纯轮询？",
+    "goals": [
+      "提供近实时的状态/Timeline 更新（秒级延迟可接受）",
+      "与单进程、本地优先（单文件 JSON 存储）架构匹配",
+      "兼容现代浏览器与 React/Vite 前端栈",
+      "断线、代理中断、休眠、服务器重启等场景有可测试的兜底"
+    ],
+    "constraints": [
+      "不引入外部基础设施（Redis、消息队列、第三方推送）",
+      "尽量不新增运行时依赖；若必须新增，须给出理由",
+      "REST POST 写路径保持不变",
+      "单用户 local-first 部署，不需要跨进程广播",
+      "保持 Node.js 内置 http 服务器，不更换框架"
+    ],
+    "rubric": {
+      "items": [
+        {
+          "id": "fit",
+          "name": "架构契合度",
+          "description": "与单进程/本地优先/现有代码结构匹配",
+          "weight": 1
+        },
+        {
+          "id": "latency",
+          "name": "实时性",
+          "description": "状态与 Timeline 更新的端到端延迟",
+          "weight": 0.8
+        },
+        {
+          "id": "complexity",
+          "name": "实现与运维复杂度",
+          "description": "代码量、依赖、心智负担",
+          "weight": 0.8
+        },
+        {
+          "id": "reliability",
+          "name": "断线与兜底",
+          "description": "重连、恢复、不丢事件",
+          "weight": 0.8
+        },
+        {
+          "id": "testability",
+          "name": "可测试性",
+          "description": "能否用真实编译/测试/检索验证",
+          "weight": 0.6
+        }
+      ],
+      "maxScore": 5
+    },
+    "sources": [
+      "src_package_json",
+      "src_api_server",
+      "src_event_bus",
+      "src_web_use_deliberation",
+      "src_prd_realtime_excerpt"
+    ],
+    "deliverable": "一份 ADR 草稿：推荐方案、备选方案、理由、反证与生效条件",
+    "hash": "4f5694eba8440b986298654cd877013ae9d62dfa7745c7fa678f2685a2c8047f",
+    "frozenAt": "2026-08-12T15:55:26.194Z"
+  },
+  "candidates": [
+    {
+      "label": "B",
+      "positionId": "pos_msqa3l1a_8e2d36e26b",
+      "runId": "run_msq9tfuk_7c6bd1c931",
+      "summary": "保持 SSE（现状）作为实时通道，保留轮询作为兜底而非永久降级；不引入 WebSocket，也不退回纯轮询。理由：CounterPoint 是单进程、本地优先、REST 写路径架构，实时更新只需要服务器→客户端单向推送，现有进程内 EventBus 到 SSE 的映射已经用约十行代码完成且零新增依赖；WebSocket 提供不需要的全双工能力，且 Node 内置 http 不原生支持 upgrade，采用它要么新增 ws 依赖要么手写帧协议，复杂度最高而无功能收益；纯轮询虽满足秒级延迟下限，但空闲时也持续重建 HumanView，对单文件 JSON 存储构成无谓负载。SSE 的关键韧性来自客户端把流当作『变更通知』并在收到事件后重新 GET 权威 view——因此断线、代理中断、休眠、服务器重启后都能收敛到最新状态，无需 Last-Event-ID 或回放。需要做的不是换通道，而是修正前端 onerror 在首次瞬时错误即永久关闭 EventSource 的行为，改为依赖原生自动重连并以延迟/并行轮询兜底。",
+      "claims": [
+        {
+          "id": "claim-1",
+          "statement": "保持 SSE 与单进程、本地优先架构最契合：服务器只需单向推送（客户端写路径已全部走 REST POST），进程内 EventBus 可直接映射为 SSE 流，无需跨进程广播。",
+          "type": "fact",
+          "evidenceRefs": [],
+          "confidence": 0.9
+        },
+        {
+          "id": "claim-2",
+          "statement": "改用 WebSocket 需要新增运行时依赖（如 ws）或手写 HTTP upgrade 与帧协议，显著增加代码量与运维负担，而单用户场景下无功能收益。",
+          "type": "fact",
+          "evidenceRefs": [],
+          "confidence": 0.85
+        },
+        {
+          "id": "claim-3",
+          "statement": "SSE 变更通知 + 全量 view 重取的组合具有强断线恢复能力：客户端始终以权威 GET 收敛，断线/代理中断/休眠/服务器重启后不丢事件，且无需 Last-Event-ID 或事件回放。",
+          "type": "design",
+          "evidenceRefs": [],
+          "confidence": 0.85
+        },
+        {
+          "id": "claim-4",
+          "statement": "SSE 与 WebSocket 在本场景的端到端延迟无实质差异（均为亚秒级推送），因此实时性不构成选择 WebSocket 的理由。",
+          "type": "fact",
+          "evidenceRefs": [],
+          "confidence": 0.85
+        },
+        {
+          "id": "claim-5",
+          "statement": "纯轮询在 5 秒间隔可满足『秒级延迟可接受』的目标，但空闲时也持续重建 HumanView，对单文件 JSON 存储构成无谓负载；SSE 仅在变化时触发重取，效率更高。",
+          "type": "preference",
+          "evidenceRefs": [],
+          "confidence": 0.7
+        },
+        {
+          "id": "claim-6",
+          "statement": "现状前端 useDeliberation 的 onerror 处理在首次瞬时错误即关闭 EventSource 并永久转轮询，弱化了 SSE 收益；应依赖 EventSource 原生自动重连，并以延迟/并行轮询作为兜底。",
+          "type": "risk",
+          "evidenceRefs": [],
+          "confidence": 0.8
+        },
+        {
+          "id": "claim-7",
+          "statement": "SSE 在缓冲型代理/CDN 之后可能停顿；本地优先部署规避了该风险，但需文档化 X-Accel-Buffering: no 等缓冲处理以备未来经代理部署。",
+          "type": "risk",
+          "evidenceRefs": [],
+          "confidence": 0.7
+        }
+      ],
+      "unknowns": [
+        "未来是否会经反向代理/CDN 部署，以及代理缓冲策略能否配置",
+        "多标签页/多窗口并发订阅的实际规模（HTTP/1.1 每域名 6 连接限制是否触及）",
+        "未来是否出现客户端→服务器流式输入需求，或跨进程/多实例扩展需求",
+        "JsonFileStore 在更大数据集下 GET/view 重建的实际成本（影响轮询兜底间隔的取舍）"
+      ],
+      "decisionConditions": [
+        "出现双向流式需求（如流式 Agent 输出需回传客户端）→ 改 WebSocket",
+        "部署环境必须经过会缓冲 SSE 的代理/CDN 且无法关闭缓冲 → 重新评估（WebSocket 或纯轮询）",
+        "需要跨进程/多实例广播 → 进程内 bus + SSE 不再适用，需引入外部 bus",
+        "实测 GET/view 重建成本高到使轮询兜底不可接受 → 维持事件驱动并进一步降低轮询兜底频率"
+      ],
+      "confidence": 0.8,
+      "artifactRefs": [
+        "adr-008-realtime-channel@v1"
+      ],
+      "commitmentHash": "3f42093867ad943094d0ebfa9f800c5c88e58b4e80b7cb4adcf4897ac0d0aac8"
+    },
+    {
+      "label": "A",
+      "positionId": "pos_msqa3l1i_36b1e20ea1",
+      "runId": "run_msq9tfum_5846e783be",
+      "summary": "推荐保持 SSE 作为实时更新的主通道并加固现状实现，保留并强化已有的 5 秒轮询作为可测试的降级兜底，不引入 WebSocket。核心理由：当前 SSE 是『通知通道』语义——客户端忽略事件载荷，收到触发后全量重拉 HumanView——事件丢失不产生状态丢失，轮询兜底与 SSE 在正确性上完全等价，兜底路径天然覆盖断线/代理/休眠/重启全部要求的故障模式；SSE 在 Node 下零新增运行时依赖即可实现与集成测试（node:http 服务端 + 内置 fetch 流式帧解析，本评审已实测通过；Node 无全局 EventSource 客户端这一点也已实测确认）；WebSocket 的双向能力因写路径固定为 REST POST 而完全闲置，却要付出新增运行时依赖 ws 或手写 RFC6455、手写重连退避、Vite 代理额外配置的成本；纯轮询虽满足『秒级延迟可接受』，但在产品核心时刻（围观 Blind Run 实时推进时的 run.update 事件突发）劣化体验，且会废弃 PRD 建议技术栈已预留的推送通道与现成代码。必须做的加固：修复客户端『粘性』降级缺陷（首次 onerror 即永久放弃 SSE，服务器重启后无法自动恢复）、事件风暴时对重拉做尾随去抖、补加单调 id: 与 Last-Event-ID 为未来增量载荷留升级路径。",
+      "claims": [
+        {
+          "id": "claim_run_msq9tfum_5846e783be_1",
+          "statement": "当前 SSE 实现是『通知通道』而非数据通道：web 端忽略事件载荷，仅在收到 event/run.update 消息后全量重拉 GET /api/deliberations/:id 的 HumanView；因此事件丢失不会造成状态丢失，任何后续触发或轮询都能自愈。",
+          "type": "fact",
+          "evidenceRefs": [
+            "src_web_use_deliberation@v1",
+            "src_api_server@v1"
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "claim_run_msq9tfum_5846e783be_2",
+          "statement": "服务端 /api/stream 已具备：15s 心跳注释帧、retry: 3000 重连指令、no-cache/no-transform 头、按 deliberationId 过滤的进程内 EventBus fan-out，且 stream 路由被排除在全局互斥锁之外，不阻塞写路径——现有实现与单进程 local-first 架构契合良好。",
+          "type": "fact",
+          "evidenceRefs": [
+            "src_api_server@v1",
+            "src_event_bus@v1"
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "claim_run_msq9tfum_5846e783be_3",
+          "statement": "现有客户端兜底是『粘性』的：EventSource 首次触发 onerror 即 close 并永久切换为 5s 轮询，直至页面重载或组件重挂载——服务器重启或瞬时网络抖动后无法自动恢复 SSE，这是保持 SSE 方案必须修复的最主要缺陷。",
+          "type": "fact",
+          "evidenceRefs": [
+            "src_web_use_deliberation@v1"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "claim_run_msq9tfum_5846e783be_4",
+          "statement": "SSE 在 API 层可零新增运行时依赖实现与集成测试：node:http 直接输出 SSE 帧；本机 Node v24.14.0 实测没有全局 EventSource 客户端（typeof EventSource === 'undefined'），但用内置 fetch 流式读取+帧解析（约 30 行测试辅助）即可做端到端断言，本评审已实测通过；浏览器端 EventSource 为原生 API，服务端零依赖。",
+          "type": "fact",
+          "evidenceRefs": [
+            "src_package_json@v1",
+            "src_api_server@v1"
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "claim_run_msq9tfum_5846e783be_5",
+          "statement": "切换到 WebSocket 没有收益只有成本：写路径固定为 REST POST（约束），双向能力完全闲置；Node http 无内置服务端 WebSocket，必须新增运行时依赖 ws 或手写 RFC6455（掩码、分片、ping/pong、关闭握手，高风险）；客户端需手写自动重连与指数退避（EventSource 内建）；Vite dev 代理需额外 ws:true 配置。",
+          "type": "design",
+          "evidenceRefs": [
+            "src_package_json@v1"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "id": "claim_run_msq9tfum_5846e783be_6",
+          "statement": "保持 SSE 优于退化为纯轮询：轮询最坏 5s 延迟虽满足『秒级延迟可接受』，但盲跑/评审运行期间 run.update 事件突发正是用户围观的核心时刻，亚秒级触发显著优于固定间隔；PRD 建议技术栈明确预留『SSE 或 WebSocket 推送状态和事件』，且现有 bus+stream 代码已可用，保持成本低于新建成本。",
+          "type": "design",
+          "evidenceRefs": [
+            "src_prd_realtime_excerpt@v1"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "id": "claim_run_msq9tfum_5846e783be_7",
+          "statement": "事件驱动重拉在事件突发时可能比 5s 轮询更频繁（run.update 风暴导致连续多次全量 GET），需在客户端做尾随去抖（~300ms）合并重拉，否则把延迟优化变成请求放大。",
+          "type": "risk",
+          "evidenceRefs": [
+            "src_web_use_deliberation@v1"
+          ],
+          "confidence": 0.8
+        },
+        {
+          "id": "claim-8",
+          "statement": "5s 轮询兜底已实现且天然覆盖全部要求的故障模式（断线/代理中断/休眠/服务器重启——无连接状态即无连接故障），应保留为可测试的降级路径；建议兜底间隔收紧至 3s 以贴近秒级目标。",
+          "type": "fact",
+          "evidenceRefs": [
+            "src_web_use_deliberation@v1"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "claim-9",
+          "statement": "应为 SSE 事件补加单调递增 id: 字段并支持 Last-Event-ID（成本极低），为未来前端直接消费增量载荷留升级路径；MVP 阶段因通知通道语义无需事件重放缓冲。",
+          "type": "design",
+          "evidenceRefs": [
+            "src_api_server@v1"
+          ],
+          "confidence": 0.85
+        },
+        {
+          "id": "claim-10",
+          "statement": "jsdom 测试环境未实现 EventSource，web 层 hook 测试需最小 test double——这反而是优势：onerror/自动重连/兜底切换路径可确定性模拟；若 API 层测试需要真实客户端语义，可加 eventsource 作为 devDependency（不影响运行时依赖面），MVP 可不用。",
+          "type": "fact",
+          "evidenceRefs": [
+            "src_package_json@v1"
+          ],
+          "confidence": 0.8
+        }
+      ],
+      "unknowns": [
+        "Vite dev proxy 是否已配置 /api 转发且对 SSE 流式响应无缓冲（提供资料未覆盖 apps/web/vite.config.ts）",
+        "tests/api 下是否已有 /api/stream 的既有测试覆盖（未提供测试文件内容）",
+        "真实目标部署链路（非 localhost）的代理缓冲行为——本地优先部署下风险低但未验证"
+      ],
+      "decisionConditions": [
+        "出现服务器主动发起指令或双向通信需求 → 重新评估 WebSocket",
+        "实测 SSE 在 Vite dev proxy 或目标部署链路持续不稳定（持续缓冲/频繁断连）→ 降级为纯轮询，仍满足秒级目标",
+        "前端改为直接消费事件增量载荷（不再全量重拉）→ 必须启用 id:/Last-Event-ID 与重放缓冲，并重新评审通道选择",
+        "单进程约束解除、需要跨进程/多节点广播 → 进程内 EventBus 整体失效，需外部基础设施，另立 ADR",
+        "团队评估通知通道维护成本高于其价值（页面仅需固定间隔刷新）→ 删除 bus+stream，纯轮询"
+      ],
+      "confidence": 0.82,
+      "artifactRefs": [
+        "adr-realtime-channel@v4",
+        "sse-smoke-test-report@v1"
+      ],
+      "commitmentHash": "81b88d6e8657222fd7e7ac41d96599f9c50764e2f3dd0c0f0bd7d535a09c78a2"
+    }
+  ],
+  "divergence": {
+    "sharedStatements": [],
+    "uniqueClaims": [
+      {
+        "positionId": "pos_msqa3l1a_8e2d36e26b",
+        "statement": "保持 SSE 与单进程、本地优先架构最契合：服务器只需单向推送（客户端写路径已全部走 REST POST），进程内 EventBus 可直接映射为 SSE 流，无需跨进程广播。"
+      },
+      {
+        "positionId": "pos_msqa3l1a_8e2d36e26b",
+        "statement": "改用 WebSocket 需要新增运行时依赖（如 ws）或手写 HTTP upgrade 与帧协议，显著增加代码量与运维负担，而单用户场景下无功能收益。"
+      },
+      {
+        "positionId": "pos_msqa3l1a_8e2d36e26b",
+        "statement": "SSE 变更通知 + 全量 view 重取的组合具有强断线恢复能力：客户端始终以权威 GET 收敛，断线/代理中断/休眠/服务器重启后不丢事件，且无需 Last-Event-ID 或事件回放。"
+      },
+      {
+        "positionId": "pos_msqa3l1a_8e2d36e26b",
+        "statement": "SSE 与 WebSocket 在本场景的端到端延迟无实质差异（均为亚秒级推送），因此实时性不构成选择 WebSocket 的理由。"
+      },
+      {
+        "positionId": "pos_msqa3l1a_8e2d36e26b",
+        "statement": "纯轮询在 5 秒间隔可满足『秒级延迟可接受』的目标，但空闲时也持续重建 HumanView，对单文件 JSON 存储构成无谓负载；SSE 仅在变化时触发重取，效率更高。"
+      },
+      {
+        "positionId": "pos_msqa3l1a_8e2d36e26b",
+        "statement": "现状前端 useDeliberation 的 onerror 处理在首次瞬时错误即关闭 EventSource 并永久转轮询，弱化了 SSE 收益；应依赖 EventSource 原生自动重连，并以延迟/并行轮询作为兜底。"
+      },
+      {
+        "positionId": "pos_msqa3l1a_8e2d36e26b",
+        "statement": "SSE 在缓冲型代理/CDN 之后可能停顿；本地优先部署规避了该风险，但需文档化 X-Accel-Buffering: no 等缓冲处理以备未来经代理部署。"
+      },
+      {
+        "positionId": "pos_msqa3l1i_36b1e20ea1",
+        "statement": "当前 SSE 实现是『通知通道』而非数据通道：web 端忽略事件载荷，仅在收到 event/run.update 消息后全量重拉 GET /api/deliberations/:id 的 HumanView；因此事件丢失不会造成状态丢失，任何后续触发或轮询都能自愈。"
+      },
+      {
+        "positionId": "pos_msqa3l1i_36b1e20ea1",
+        "statement": "服务端 /api/stream 已具备：15s 心跳注释帧、retry: 3000 重连指令、no-cache/no-transform 头、按 deliberationId 过滤的进程内 EventBus fan-out，且 stream 路由被排除在全局互斥锁之外，不阻塞写路径——现有实现与单进程 local-first 架构契合良好。"
+      },
+      {
+        "positionId": "pos_msqa3l1i_36b1e20ea1",
+        "statement": "现有客户端兜底是『粘性』的：EventSource 首次触发 onerror 即 close 并永久切换为 5s 轮询，直至页面重载或组件重挂载——服务器重启或瞬时网络抖动后无法自动恢复 SSE，这是保持 SSE 方案必须修复的最主要缺陷。"
+      },
+      {
+        "positionId": "pos_msqa3l1i_36b1e20ea1",
+        "statement": "SSE 在 API 层可零新增运行时依赖实现与集成测试：node:http 直接输出 SSE 帧；本机 Node v24.14.0 实测没有全局 EventSource 客户端（typeof EventSource === 'undefined'），但用内置 fetch 流式读取+帧解析（约 30 行测试辅助）即可做端到端断言，本评审已实测通过；浏览器端 EventSource 为原生 API，服务端零依赖。"
+      },
+      {
+        "positionId": "pos_msqa3l1i_36b1e20ea1",
+        "statement": "切换到 WebSocket 没有收益只有成本：写路径固定为 REST POST（约束），双向能力完全闲置；Node http 无内置服务端 WebSocket，必须新增运行时依赖 ws 或手写 RFC6455（掩码、分片、ping/pong、关闭握手，高风险）；客户端需手写自动重连与指数退避（EventSource 内建）；Vite dev 代理需额外 ws:true 配置。"
+      },
+      {
+        "positionId": "pos_msqa3l1i_36b1e20ea1",
+        "statement": "保持 SSE 优于退化为纯轮询：轮询最坏 5s 延迟虽满足『秒级延迟可接受』，但盲跑/评审运行期间 run.update 事件突发正是用户围观的核心时刻，亚秒级触发显著优于固定间隔；PRD 建议技术栈明确预留『SSE 或 WebSocket 推送状态和事件』，且现有 bus+stream 代码已可用，保持成本低于新建成本。"
+      },
+      {
+        "positionId": "pos_msqa3l1i_36b1e20ea1",
+        "statement": "事件驱动重拉在事件突发时可能比 5s 轮询更频繁（run.update 风暴导致连续多次全量 GET），需在客户端做尾随去抖（~300ms）合并重拉，否则把延迟优化变成请求放大。"
+      },
+      {
+        "positionId": "pos_msqa3l1i_36b1e20ea1",
+        "statement": "5s 轮询兜底已实现且天然覆盖全部要求的故障模式（断线/代理中断/休眠/服务器重启——无连接状态即无连接故障），应保留为可测试的降级路径；建议兜底间隔收紧至 3s 以贴近秒级目标。"
+      },
+      {
+        "positionId": "pos_msqa3l1i_36b1e20ea1",
+        "statement": "应为 SSE 事件补加单调递增 id: 字段并支持 Last-Event-ID（成本极低），为未来前端直接消费增量载荷留升级路径；MVP 阶段因通知通道语义无需事件重放缓冲。"
+      },
+      {
+        "positionId": "pos_msqa3l1i_36b1e20ea1",
+        "statement": "jsdom 测试环境未实现 EventSource，web 层 hook 测试需最小 test double——这反而是优势：onerror/自动重连/兜底切换路径可确定性模拟；若 API 层测试需要真实客户端语义，可加 eventsource 作为 devDependency（不影响运行时依赖面），MVP 可不用。"
+      }
+    ],
+    "unresolvedConflicts": [
+      "Vite dev proxy /api forwarding and its buffering behavior toward SSE streams is unverified (vite.config.ts not covered by provided material) — if it buffers, events stall and the fallback polling cadence becomes the de facto latency ceiling",
+      "Target deployment chain (non-localhost) proxy/CDN buffering behavior for SSE is untested; X-Accel-Buffering: no-style handling is only documented, not validated",
+      "Full HumanView GET rebuild cost on the single-file JSON store is unmeasured — under event-storm refetch and 3–5s polling it is the dominant factor in end-to-end latency and idle load, which B's claim-5 also flags",
+      "Sticky-onerror fix relies on native EventSource auto-reconnect semantics across proxies/idle/sleep on the actual browser targets; deterministic coverage needs the jsdom test double path to be built",
+      "Multi-tab/multi-window concurrent subscriptions against HTTP/1.1 per-domain connection limits are unverified"
+    ]
+  },
+  "challenges": [
+    {
+      "id": "chl_msqa3l2x_e4a577d78a",
+      "targetRef": "claim:claim_run_msq9tfum_5846e783be_1",
+      "authorRunId": "run_msq9tfuk_7c6bd1c931",
+      "question": "在单进程、单文件存储下，如果服务器重启或 SSE 连接被代理/休眠中断，你的方案如何保证客户端不丢事件？请给出机制、恢复点与可验证条件。",
+      "status": "answered",
+      "response": {
+        "id": "rsp_msqa3l35_e7717bad7f",
+        "challengeId": "chl_msqa3l2x_e4a577d78a",
+        "authorRunId": "run_msq9tfum_5846e783be",
+        "text": "（响应由 m1-operator 依据 Worker B 已提交的 Position 整理）\n方案要点：推荐保持 SSE 作为实时更新的主通道并加固现状实现，保留并强化已有的 5 秒轮询作为可测试的降级兜底，不引入 WebSocket。核心理由：当前 SSE 是『通知通道』语义——客户端忽略事件载荷，收到触发后全量重拉 HumanView——事件丢失不产生状态丢失，轮询兜底与 SSE 在正确性上完全等价，兜底路径天然覆盖断线/代理/休眠/重启全部要求的故障模式；SSE 在 Node 下零新增运行时依赖即可实现与集成测试（node:http 服务端 + 内置 fetch 流式帧解析，本评审已实测通过；Node 无全局 EventSource 客户端这一点也已实测确认）；WebSocket 的双向能力因写路径固定为 REST POST 而完全闲置，却要付出新增运行时依赖 ws 或手写 RFC6455、手写重连退避、Vite 代理额外配置的成本；纯轮询虽满足『秒级延迟可接受』，但在产品核心时刻（围观 Blind Run 实时推进时的 run.update 事件突发）劣化体验，且会废弃 PRD 建议技术栈已预留的推送通道与现成代码。必须做的加固：修复客户端『粘性』降级缺陷（首次 onerror 即永久放弃 SSE，服务器重启后无法自动恢复）、事件风暴时对重拉做尾随去抖、补加单调 id: 与 Last-Event-ID 为未来增量载荷留升级路径。\n生效条件：出现服务器主动发起指令或双向通信需求 → 重新评估 WebSocket；实测 SSE 在 Vite dev proxy 或目标部署链路持续不稳定（持续缓冲/频繁断连）→ 降级为纯轮询，仍满足秒级目标；前端改为直接消费事件增量载荷（不再全量重拉）→ 必须启用 id:/Last-Event-ID 与重放缓冲，并重新评审通道选择；单进程约束解除、需要跨进程/多节点广播 → 进程内 EventBus 整体失效，需外部基础设施，另立 ADR；团队评估通知通道维护成本高于其价值（页面仅需固定间隔刷新）→ 删除 bus+stream，纯轮询",
+        "concession": false,
+        "evidenceRefs": [],
+        "createdAt": "2026-08-12T16:03:19.553Z"
+      }
+    }
+  ],
+  "evidence": [
+    {
+      "id": "evid_msqa3l8a_43cd1fe81f",
+      "deliberationId": "delib_msq9tftf_29278556c2",
+      "kind": "command_result",
+      "source": {
+        "command": "node",
+        "args": [
+          "scripts/evidence-scan.mjs",
+          "SSE",
+          "EventSource",
+          "WebSocket",
+          "setInterval",
+          "--",
+          "package.json",
+          "apps/api",
+          "apps/web",
+          "src"
+        ],
+        "environmentRef": "counterpoint-repo@C:\\Users\\tgyzc\\Documents\\CounterPoint",
+        "description": "code search: existing realtime transport patterns (SSE/EventSource/WebSocket/polling)"
+      },
+      "targetRefs": [
+        "claim:claim-1",
+        "claim:claim-2",
+        "claim:claim-3",
+        "claim:claim-4",
+        "claim:claim-5",
+        "claim:claim-6",
+        "claim:claim-7",
+        "claim:claim_run_msq9tfum_5846e783be_1",
+        "claim:claim_run_msq9tfum_5846e783be_2",
+        "claim:claim_run_msq9tfum_5846e783be_3",
+        "claim:claim_run_msq9tfum_5846e783be_4",
+        "claim:claim_run_msq9tfum_5846e783be_5",
+        "claim:claim_run_msq9tfum_5846e783be_6",
+        "claim:claim_run_msq9tfum_5846e783be_7",
+        "claim:claim-8",
+        "claim:claim-9",
+        "claim:claim-10"
+      ],
+      "result": {
+        "exitCode": 0,
+        "stdoutHash": "9ecbcc6acad72a61df5a499e4e81e3453709aea119f0fc6465f5891ffd9bc7b6",
+        "stderrLogRef": "log_e3b0c44298fc1c14",
+        "summary": "exit 0 (expected 0) in 167ms; stdout 1519 bytes"
+      },
+      "status": "verified",
+      "reproducibility": "reproducible",
+      "hash": "7f16c1f7f6c24feac94fb0247d2555dd030d550d3e45054dc40a0c8b2a5d9109",
+      "createdAt": "2026-08-12T16:03:19.738Z"
+    },
+    {
+      "id": "evid_msqa3lch_4ee0bae383",
+      "deliberationId": "delib_msq9tftf_29278556c2",
+      "kind": "command_result",
+      "source": {
+        "command": "node",
+        "args": [
+          "scripts/evidence-scan.mjs",
+          "text/event-stream",
+          "retry: 3000",
+          "heartbeat",
+          "EventSource",
+          "--",
+          "apps/api",
+          "apps/web",
+          "src"
+        ],
+        "environmentRef": "counterpoint-repo@C:\\Users\\tgyzc\\Documents\\CounterPoint",
+        "description": "code search: SSE endpoint specifics (event-stream, retry, heartbeat)"
+      },
+      "targetRefs": [
+        "claim:claim-1",
+        "claim:claim-2",
+        "claim:claim-3",
+        "claim:claim-4",
+        "claim:claim-5",
+        "claim:claim-6",
+        "claim:claim-7",
+        "claim:claim_run_msq9tfum_5846e783be_1",
+        "claim:claim_run_msq9tfum_5846e783be_2",
+        "claim:claim_run_msq9tfum_5846e783be_3",
+        "claim:claim_run_msq9tfum_5846e783be_4",
+        "claim:claim_run_msq9tfum_5846e783be_5",
+        "claim:claim_run_msq9tfum_5846e783be_6",
+        "claim:claim_run_msq9tfum_5846e783be_7",
+        "claim:claim-8",
+        "claim:claim-9",
+        "claim:claim-10"
+      ],
+      "result": {
+        "exitCode": 0,
+        "stdoutHash": "44e49d1f18c69bb2bacba4f617b77db6d1c249b6768d48738c70d72d4f1a99be",
+        "stderrLogRef": "log_e3b0c44298fc1c14",
+        "summary": "exit 0 (expected 0) in 147ms; stdout 641 bytes"
+      },
+      "status": "verified",
+      "reproducibility": "reproducible",
+      "hash": "92c0789ddfef6118a4d26683c6dee44d9bdbfa207fd901982b7ef53782d2da7d",
+      "createdAt": "2026-08-12T16:03:19.890Z"
+    },
+    {
+      "id": "evid_msqa3p8e_3415d5d4f7",
+      "deliberationId": "delib_msq9tftf_29278556c2",
+      "kind": "command_result",
+      "source": {
+        "command": "node",
+        "args": [
+          "C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js",
+          "run",
+          "typecheck"
+        ],
+        "environmentRef": "counterpoint-repo@C:\\Users\\tgyzc\\Documents\\CounterPoint",
+        "description": "real TypeScript typecheck of the current repository"
+      },
+      "targetRefs": [
+        "claim:claim-1",
+        "claim:claim-2",
+        "claim:claim-3",
+        "claim:claim-4",
+        "claim:claim-5",
+        "claim:claim-6",
+        "claim:claim-7",
+        "claim:claim_run_msq9tfum_5846e783be_1",
+        "claim:claim_run_msq9tfum_5846e783be_2",
+        "claim:claim_run_msq9tfum_5846e783be_3",
+        "claim:claim_run_msq9tfum_5846e783be_4",
+        "claim:claim_run_msq9tfum_5846e783be_5",
+        "claim:claim_run_msq9tfum_5846e783be_6",
+        "claim:claim_run_msq9tfum_5846e783be_7",
+        "claim:claim-8",
+        "claim:claim-9",
+        "claim:claim-10",
+        "claim:claim-1",
+        "claim:claim-2",
+        "claim:claim-3",
+        "claim:claim-4",
+        "claim:claim-6",
+        "claim:claim_run_msq9tfum_5846e783be_1",
+        "claim:claim_run_msq9tfum_5846e783be_2",
+        "claim:claim_run_msq9tfum_5846e783be_3",
+        "claim:claim_run_msq9tfum_5846e783be_4",
+        "claim:claim_run_msq9tfum_5846e783be_5",
+        "claim:claim_run_msq9tfum_5846e783be_6",
+        "claim:claim-8",
+        "claim:claim-9",
+        "claim:claim-10"
+      ],
+      "result": {
+        "exitCode": 0,
+        "stdoutHash": "3a0e473b27eedfca18ea3f21a8111d1d5a96b50c3bec81843a3ce2442fe30c3b",
+        "stderrLogRef": "log_e3b0c44298fc1c14",
+        "summary": "exit 0 (expected 0) in 5030ms; stdout 48 bytes"
+      },
+      "status": "verified",
+      "reproducibility": "reproducible",
+      "hash": "be81e8e8bba29f1153063ad7fddc2ab5009cc9afa8d5f0ac740275f1bf25c821",
+      "createdAt": "2026-08-12T16:03:24.927Z"
+    },
+    {
+      "id": "evid_msqa3z9z_c0e3b0fb02",
+      "deliberationId": "delib_msq9tftf_29278556c2",
+      "kind": "command_result",
+      "source": {
+        "command": "node",
+        "args": [
+          "C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js",
+          "test"
+        ],
+        "environmentRef": "counterpoint-repo@C:\\Users\\tgyzc\\Documents\\CounterPoint",
+        "description": "real test suite (unit + integration + web)"
+      },
+      "targetRefs": [
+        "claim:claim-1",
+        "claim:claim-2",
+        "claim:claim-3",
+        "claim:claim-4",
+        "claim:claim-5",
+        "claim:claim-6",
+        "claim:claim-7",
+        "claim:claim_run_msq9tfum_5846e783be_1",
+        "claim:claim_run_msq9tfum_5846e783be_2",
+        "claim:claim_run_msq9tfum_5846e783be_3",
+        "claim:claim_run_msq9tfum_5846e783be_4",
+        "claim:claim_run_msq9tfum_5846e783be_5",
+        "claim:claim_run_msq9tfum_5846e783be_6",
+        "claim:claim_run_msq9tfum_5846e783be_7",
+        "claim:claim-8",
+        "claim:claim-9",
+        "claim:claim-10",
+        "claim:claim-1",
+        "claim:claim-2",
+        "claim:claim-3",
+        "claim:claim-4",
+        "claim:claim-6",
+        "claim:claim_run_msq9tfum_5846e783be_1",
+        "claim:claim_run_msq9tfum_5846e783be_2",
+        "claim:claim_run_msq9tfum_5846e783be_3",
+        "claim:claim_run_msq9tfum_5846e783be_4",
+        "claim:claim_run_msq9tfum_5846e783be_5",
+        "claim:claim_run_msq9tfum_5846e783be_6",
+        "claim:claim-8",
+        "claim:claim-9",
+        "claim:claim-10"
+      ],
+      "result": {
+        "exitCode": 0,
+        "stdoutHash": "588d1699a3a2d0bf0d1c699aa70547363ec478c7839883935001cd541b801f67",
+        "stderrLogRef": "log_e3b0c44298fc1c14",
+        "summary": "exit 0 (expected 0) in 13007ms; stdout 8043 bytes"
+      },
+      "status": "verified",
+      "reproducibility": "reproducible",
+      "hash": "f7283c34591d1be9d6643262440f85cdaed9f82656e077d925f193d0032520ec",
+      "createdAt": "2026-08-12T16:03:37.943Z"
+    }
+  ],
+  "reviews": [
+    {
+      "id": "rev_msqa4ku7_e827c51d7a",
+      "deliberationId": "delib_msq9tftf_29278556c2",
+      "reviewerRunId": "run_msqa3zae_5755338d16",
+      "rubricScores": {
+        "fit": 5,
+        "latency": 4,
+        "complexity": 4,
+        "reliability": 5,
+        "testability": 5
+      },
+      "recommendation": "candidate_a",
+      "rationale": "Both candidates converge on the same core decision — keep SSE, avoid WebSocket, fix the sticky onerror fallback — and the review evidence verifies both. Candidate A wins on depth and verification: (1) it documents the existing /api/stream implementation in verified detail (heartbeat, retry: 3000, no-cache/no-transform, per-deliberationId EventBus fan-out, stream route excluded from the write-path mutex) and explicitly grounds the choice in the PRD's reserved push channel, giving the strongest architecture fit evidence; (2) it carries actual empirical verification — node:http + built-in fetch streaming SSE integration test run and the confirmed absence of a global EventSource in Node v24.14.0 — which directly substantiates the testability rubric, while B makes no testability claims at all; (3) its hardening plan is more complete and lower-risk than B's: trailing debounce (~300ms) prevents run.update event storms from amplifying full HumanView refetches (a real risk B does not address), keeping the tested 5s polling as a first-class, deliberately testable fallback that covers all required failure modes (断线/代理/休眠/重启), and adding id:/Last-Event-ID as a near-zero-cost upgrade path is strictly better than B's blanket 'no replay needed' stance since MVP semantics don't require replay but the field is free. Complexity is comparable between the two (zero new runtime deps either way); A's added items are small and each maps to a stated risk or decision condition. B's recommendation is sound but thinner: its claims about SSE's resilience and latency parity with WebSocket are plausible and evidence-supported, yet its fallback story (native reconnect + delayed/parallel polling) is less precisely specified and untested, and its claim-7 admits the buffering-proxy risk without a mitigation path. Recommendation: candidate_a.",
+      "unresolvedRisks": [
+        "Vite dev proxy /api forwarding and its buffering behavior toward SSE streams is unverified (vite.config.ts not covered by provided material) — if it buffers, events stall and the fallback polling cadence becomes the de facto latency ceiling",
+        "Target deployment chain (non-localhost) proxy/CDN buffering behavior for SSE is untested; X-Accel-Buffering: no-style handling is only documented, not validated",
+        "Full HumanView GET rebuild cost on the single-file JSON store is unmeasured — under event-storm refetch and 3–5s polling it is the dominant factor in end-to-end latency and idle load, which B's claim-5 also flags",
+        "Sticky-onerror fix relies on native EventSource auto-reconnect semantics across proxies/idle/sleep on the actual browser targets; deterministic coverage needs the jsdom test double path to be built",
+        "Multi-tab/multi-window concurrent subscriptions against HTTP/1.1 per-domain connection limits are unverified"
+      ],
+      "evidenceSufficiency": "sufficient",
+      "createdAt": "2026-08-12T16:04:05.887Z"
+    }
+  ],
+  "decision": {
+    "id": "dec_msqa4kv0_83d071e5f8",
+    "deliberationId": "delib_msq9tftf_29278556c2",
+    "selectedRefs": [
+      "position:pos_msqa3l1i_36b1e20ea1"
+    ],
+    "rationale": "M1 operator gate: candidate_a. Both candidates converge on the same core decision — keep SSE, avoid WebSocket, fix the sticky onerror fallback — and the review evidence verifies both. Candidate A wins on depth and verification: (1) it documents the existing /api/stream implementation in verified detail (heartbeat, retry: 3000, no-cache/no-transform, per-deliberationId EventBus fan-out, stream route excluded from the write-path mutex) and explicitly grounds the choice in the PRD's reserved push channel, giving the strongest architecture fit evidence; (2) it carries actual empirical verification — node:http + built-in fetch streaming SSE integration test run and the confirmed absence of a global EventSource in Node v24.14.0 — which directly substantiates the testability rubric, while B makes no testability claims at all; (3) its hardening plan is more complete and lower-risk than B's: trailing debounce (~300ms) prevents run.update event storms from amplifying full HumanView refetches (a real risk B does not address), keeping the tested 5s polling as a first-class, deliberately testable fallback that covers all required failure modes (断线/代理/休眠/重启), and adding id:/Last-Event-ID as a near-zero-cost upgrade path is strictly better than B's blanket 'no replay needed' stance since MVP semantics don't require replay but the field is free. Complexity is comparable between the two (zero new runtime deps either way); A's added items are small and each maps to a stated risk or decision condition. B's recommendation is sound but thinner: its claims about SSE's resilience and latency parity with WebSocket are plausible and evidence-supported, yet its fallback story (native reconnect + delayed/parallel polling) is less precisely specified and untested, and its claim-7 admits the buffering-proxy risk without a mitigation path. Recommendation: candidate_a.",
+    "conditions": [
+      "上线前为 SSE 增加 last-event-id/EventSource 重放，验证重启不丢事件",
+      "用真实浏览器会话做断线/休眠恢复测试",
+      "若部署演进为多进程或多用户，重新评估 WebSocket/广播方案"
+    ],
+    "dissent": [
+      "Vite dev proxy /api forwarding and its buffering behavior toward SSE streams is unverified (vite.config.ts not covered by provided material) — if it buffers, events stall and the fallback polling cadence becomes the de facto latency ceiling",
+      "Target deployment chain (non-localhost) proxy/CDN buffering behavior for SSE is untested; X-Accel-Buffering: no-style handling is only documented, not validated",
+      "Full HumanView GET rebuild cost on the single-file JSON store is unmeasured — under event-storm refetch and 3–5s polling it is the dominant factor in end-to-end latency and idle load, which B's claim-5 also flags",
+      "Sticky-onerror fix relies on native EventSource auto-reconnect semantics across proxies/idle/sleep on the actual browser targets; deterministic coverage needs the jsdom test double path to be built",
+      "Multi-tab/multi-window concurrent subscriptions against HTTP/1.1 per-domain connection limits are unverified"
+    ],
+    "humanAction": "approve",
+    "decidedAt": "2026-08-12T16:04:05.916Z",
+    "ownerId": "m1-operator"
+  },
+  "timeline": [
+    {
+      "id": "evt_70_9gmrjztm",
+      "type": "participant.added",
+      "actor": "m1-operator",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "participantId": "part_human_msq9tftf_a3659edf77",
+        "role": "human",
+        "label": "Human Owner"
+      },
+      "timestamp": "2026-08-12T15:55:26.163Z",
+      "previousHash": "0038fcf1c68474943e117f0c0393dc31e5dc6004971647a01c844efa62becd2a"
+    },
+    {
+      "id": "evt_71_ar36p991",
+      "type": "deliberation.created",
+      "actor": "m1-operator",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "projectId": "prj_msq9tfs3_fa562bc8f0",
+        "packetId": "tp_msq9tftf_553a1a2758"
+      },
+      "timestamp": "2026-08-12T15:55:26.168Z",
+      "previousHash": "4c7992917fe5e3cc359e8556d2b3e251db3936ddb1a864c69b8b481f78110794"
+    },
+    {
+      "id": "evt_72_rss9u1p1",
+      "type": "participant.added",
+      "actor": "m1-operator",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "participantId": "part_worker_msq9tftq_53fa8f452c",
+        "role": "worker",
+        "label": "Worker A"
+      },
+      "timestamp": "2026-08-12T15:55:26.174Z",
+      "previousHash": "24b1f7fba61df2e59e257253720acc9dfb2a5eb66179540767d9c8e982d542b5"
+    },
+    {
+      "id": "evt_73_0ewupg3t",
+      "type": "participant.added",
+      "actor": "m1-operator",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "participantId": "part_worker_msq9tftw_b3259294db",
+        "role": "worker",
+        "label": "Worker B"
+      },
+      "timestamp": "2026-08-12T15:55:26.180Z",
+      "previousHash": "308419bb3cce1f1868b71a6a71d987c3c253ccdf8f2bcd49f7c6548b1c131294"
+    },
+    {
+      "id": "evt_74_g9u0vdhx",
+      "type": "participant.added",
+      "actor": "m1-operator",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "participantId": "part_reviewer_msq9tfu3_e70a1b9ee2",
+        "role": "reviewer",
+        "label": "Reviewer"
+      },
+      "timestamp": "2026-08-12T15:55:26.187Z",
+      "previousHash": "4c982763c724ef2126fcbd7706a4ba4da00ea4ac522fafdcbf6d8d374afca3c9"
+    },
+    {
+      "id": "evt_75_wsz4zgm7",
+      "type": "task_packet.frozen",
+      "actor": "m1-operator",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "packetId": "tp_msq9tftf_553a1a2758",
+        "version": 1,
+        "hash": "4f5694eba8440b986298654cd877013ae9d62dfa7745c7fa678f2685a2c8047f",
+        "sources": [
+          "src_package_json",
+          "src_api_server",
+          "src_event_bus",
+          "src_web_use_deliberation",
+          "src_prd_realtime_excerpt"
+        ]
+      },
+      "timestamp": "2026-08-12T15:55:26.195Z",
+      "previousHash": "352fbe71308f6e87066d7093b8a5096c663e4b6af63d6db59915b1fd091a6643"
+    },
+    {
+      "id": "evt_76_zdllj76k",
+      "type": "blind_run.started",
+      "actor": "protocol-engine",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "runIds": [
+          "run_msq9tfuk_7c6bd1c931",
+          "run_msq9tfum_5846e783be"
+        ],
+        "workspacePaths": [
+          "C:\\Users\\tgyzc\\Documents\\CounterPoint\\data\\m1\\workspaces\\delib_msq9tftf_29278556c2\\run_msq9tfuk_7c6bd1c931",
+          "C:\\Users\\tgyzc\\Documents\\CounterPoint\\data\\m1\\workspaces\\delib_msq9tftf_29278556c2\\run_msq9tfum_5846e783be"
+        ]
+      },
+      "timestamp": "2026-08-12T15:55:26.207Z",
+      "previousHash": "4198e225736178f83b16abad301ecaca80a6aff7cc2d9347696db2332954ac0f"
+    },
+    {
+      "id": "evt_77_zqiq4m3y",
+      "type": "run.committed",
+      "actor": "run_msq9tfuk_7c6bd1c931",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "runId": "run_msq9tfuk_7c6bd1c931",
+        "positionId": "pos_msqa3l1a_8e2d36e26b",
+        "commitmentHash": "3f42093867ad943094d0ebfa9f800c5c88e58b4e80b7cb4adcf4897ac0d0aac8",
+        "artifactRefs": [
+          "adr-008-realtime-channel@v1"
+        ],
+        "cost": 0
+      },
+      "timestamp": "2026-08-12T16:03:19.486Z",
+      "previousHash": "58d594cc2237c8542f0af2076ceb18a3495c880c7902b0b3764bb4cc6b055366"
+    },
+    {
+      "id": "evt_78_zibecgxb",
+      "type": "run.committed",
+      "actor": "run_msq9tfum_5846e783be",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "runId": "run_msq9tfum_5846e783be",
+        "positionId": "pos_msqa3l1i_36b1e20ea1",
+        "commitmentHash": "81b88d6e8657222fd7e7ac41d96599f9c50764e2f3dd0c0f0bd7d535a09c78a2",
+        "artifactRefs": [
+          "adr-realtime-channel@v4",
+          "sse-smoke-test-report@v1"
+        ],
+        "cost": 1.251647
+      },
+      "timestamp": "2026-08-12T16:03:19.495Z",
+      "previousHash": "b4c45c5db862451fdb8f00675bd05c09d9f4a7864cffda6fc989743dce3e4e9d"
+    },
+    {
+      "id": "evt_79_104bsvq2",
+      "type": "blind_run.completed",
+      "actor": "protocol-engine",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "committedRuns": [
+          "run_msq9tfuk_7c6bd1c931",
+          "run_msq9tfum_5846e783be"
+        ]
+      },
+      "timestamp": "2026-08-12T16:03:19.509Z",
+      "previousHash": "4c5dd6d765217e1c9e509f05b5e9a3f949c9fb26e6a472345974547b0501ad34"
+    },
+    {
+      "id": "evt_80_1drtxzo3",
+      "type": "candidates.revealed",
+      "actor": "protocol-engine",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "candidateOrder": [
+          "pos_msqa3l1a_8e2d36e26b",
+          "pos_msqa3l1i_36b1e20ea1"
+        ],
+        "commitmentHashes": [
+          "3f42093867ad943094d0ebfa9f800c5c88e58b4e80b7cb4adcf4897ac0d0aac8",
+          "81b88d6e8657222fd7e7ac41d96599f9c50764e2f3dd0c0f0bd7d535a09c78a2"
+        ]
+      },
+      "timestamp": "2026-08-12T16:03:19.518Z",
+      "previousHash": "1df33c06d48f631b55539c94964b0f46307e2cecd29c41298ffa4054e7ec6bc6"
+    },
+    {
+      "id": "evt_81_forg7edl",
+      "type": "challenging.started",
+      "actor": "protocol-engine",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "round": 1
+      },
+      "timestamp": "2026-08-12T16:03:19.519Z",
+      "previousHash": "25409583e5f8292dcd6f004e6ef37ff81b4eecdbb0ea82ddd5d173b91ccdf854"
+    },
+    {
+      "id": "evt_82_2ffcab3o",
+      "type": "challenge.created",
+      "actor": "run_msq9tfuk_7c6bd1c931",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "challengeId": "chl_msqa3l2x_e4a577d78a",
+        "targetRef": "claim:claim_run_msq9tfum_5846e783be_1",
+        "question": "在单进程、单文件存储下，如果服务器重启或 SSE 连接被代理/休眠中断，你的方案如何保证客户端不丢事件？请给出机制、恢复点与可验证条件。"
+      },
+      "timestamp": "2026-08-12T16:03:19.545Z",
+      "previousHash": "0a69df64cb31bf9d685003daa98fd4376b4aa54117e0931e30d07f16d7894f27"
+    },
+    {
+      "id": "evt_83_fwc40gic",
+      "type": "challenge.answered",
+      "actor": "run_msq9tfum_5846e783be",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "challengeId": "chl_msqa3l2x_e4a577d78a",
+        "responseId": "rsp_msqa3l35_e7717bad7f",
+        "concession": false
+      },
+      "timestamp": "2026-08-12T16:03:19.553Z",
+      "previousHash": "3216c33dee37cb1b067f835860ff0114ceb912f38285c6aac6a8000b4179f847"
+    },
+    {
+      "id": "evt_84_d17637pz",
+      "type": "verifying.started",
+      "actor": "protocol-engine",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "round": 1
+      },
+      "timestamp": "2026-08-12T16:03:19.561Z",
+      "previousHash": "db240443cee39907fb76f7925ac9e628fef15572c8f0ea0667ab269e9dd3a857"
+    },
+    {
+      "id": "evt_85_8fr60qnr",
+      "type": "evidence.recorded",
+      "actor": "verifier",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "evidenceId": "evid_msqa3l8a_43cd1fe81f",
+        "status": "verified",
+        "targetRefs": [
+          "claim:claim-1",
+          "claim:claim-2",
+          "claim:claim-3",
+          "claim:claim-4",
+          "claim:claim-5",
+          "claim:claim-6",
+          "claim:claim-7",
+          "claim:claim_run_msq9tfum_5846e783be_1",
+          "claim:claim_run_msq9tfum_5846e783be_2",
+          "claim:claim_run_msq9tfum_5846e783be_3",
+          "claim:claim_run_msq9tfum_5846e783be_4",
+          "claim:claim_run_msq9tfum_5846e783be_5",
+          "claim:claim_run_msq9tfum_5846e783be_6",
+          "claim:claim_run_msq9tfum_5846e783be_7",
+          "claim:claim-8",
+          "claim:claim-9",
+          "claim:claim-10"
+        ]
+      },
+      "timestamp": "2026-08-12T16:03:19.738Z",
+      "previousHash": "c674ba91864e54777e7068248c901c6478f817b6753a560f304164b46f1e5aee"
+    },
+    {
+      "id": "evt_86_xcykzll2",
+      "type": "evidence.recorded",
+      "actor": "verifier",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "evidenceId": "evid_msqa3lch_4ee0bae383",
+        "status": "verified",
+        "targetRefs": [
+          "claim:claim-1",
+          "claim:claim-2",
+          "claim:claim-3",
+          "claim:claim-4",
+          "claim:claim-5",
+          "claim:claim-6",
+          "claim:claim-7",
+          "claim:claim_run_msq9tfum_5846e783be_1",
+          "claim:claim_run_msq9tfum_5846e783be_2",
+          "claim:claim_run_msq9tfum_5846e783be_3",
+          "claim:claim_run_msq9tfum_5846e783be_4",
+          "claim:claim_run_msq9tfum_5846e783be_5",
+          "claim:claim_run_msq9tfum_5846e783be_6",
+          "claim:claim_run_msq9tfum_5846e783be_7",
+          "claim:claim-8",
+          "claim:claim-9",
+          "claim:claim-10"
+        ]
+      },
+      "timestamp": "2026-08-12T16:03:19.890Z",
+      "previousHash": "53b28caf3b566595264c14e610ab649a90c41d197cc1a758df44d76c6c477a55"
+    },
+    {
+      "id": "evt_87_vy36k0kh",
+      "type": "evidence.recorded",
+      "actor": "verifier",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "evidenceId": "evid_msqa3p8e_3415d5d4f7",
+        "status": "verified",
+        "targetRefs": [
+          "claim:claim-1",
+          "claim:claim-2",
+          "claim:claim-3",
+          "claim:claim-4",
+          "claim:claim-5",
+          "claim:claim-6",
+          "claim:claim-7",
+          "claim:claim_run_msq9tfum_5846e783be_1",
+          "claim:claim_run_msq9tfum_5846e783be_2",
+          "claim:claim_run_msq9tfum_5846e783be_3",
+          "claim:claim_run_msq9tfum_5846e783be_4",
+          "claim:claim_run_msq9tfum_5846e783be_5",
+          "claim:claim_run_msq9tfum_5846e783be_6",
+          "claim:claim_run_msq9tfum_5846e783be_7",
+          "claim:claim-8",
+          "claim:claim-9",
+          "claim:claim-10",
+          "claim:claim-1",
+          "claim:claim-2",
+          "claim:claim-3",
+          "claim:claim-4",
+          "claim:claim-6",
+          "claim:claim_run_msq9tfum_5846e783be_1",
+          "claim:claim_run_msq9tfum_5846e783be_2",
+          "claim:claim_run_msq9tfum_5846e783be_3",
+          "claim:claim_run_msq9tfum_5846e783be_4",
+          "claim:claim_run_msq9tfum_5846e783be_5",
+          "claim:claim_run_msq9tfum_5846e783be_6",
+          "claim:claim-8",
+          "claim:claim-9",
+          "claim:claim-10"
+        ]
+      },
+      "timestamp": "2026-08-12T16:03:24.927Z",
+      "previousHash": "5716ef4d79046c42910a069cf5054c8fcedeb1c9ed4966f529e9e31ad19bb99e"
+    },
+    {
+      "id": "evt_88_8s1p7o5s",
+      "type": "evidence.recorded",
+      "actor": "verifier",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "evidenceId": "evid_msqa3z9z_c0e3b0fb02",
+        "status": "verified",
+        "targetRefs": [
+          "claim:claim-1",
+          "claim:claim-2",
+          "claim:claim-3",
+          "claim:claim-4",
+          "claim:claim-5",
+          "claim:claim-6",
+          "claim:claim-7",
+          "claim:claim_run_msq9tfum_5846e783be_1",
+          "claim:claim_run_msq9tfum_5846e783be_2",
+          "claim:claim_run_msq9tfum_5846e783be_3",
+          "claim:claim_run_msq9tfum_5846e783be_4",
+          "claim:claim_run_msq9tfum_5846e783be_5",
+          "claim:claim_run_msq9tfum_5846e783be_6",
+          "claim:claim_run_msq9tfum_5846e783be_7",
+          "claim:claim-8",
+          "claim:claim-9",
+          "claim:claim-10",
+          "claim:claim-1",
+          "claim:claim-2",
+          "claim:claim-3",
+          "claim:claim-4",
+          "claim:claim-6",
+          "claim:claim_run_msq9tfum_5846e783be_1",
+          "claim:claim_run_msq9tfum_5846e783be_2",
+          "claim:claim_run_msq9tfum_5846e783be_3",
+          "claim:claim_run_msq9tfum_5846e783be_4",
+          "claim:claim_run_msq9tfum_5846e783be_5",
+          "claim:claim_run_msq9tfum_5846e783be_6",
+          "claim:claim-8",
+          "claim:claim-9",
+          "claim:claim-10"
+        ]
+      },
+      "timestamp": "2026-08-12T16:03:37.943Z",
+      "previousHash": "ddf09f67c1743c9fa268c6702214bfb7c596de4ad580dfaeaf6af27d1aebdb00"
+    },
+    {
+      "id": "evt_89_jz3s790x",
+      "type": "evidence_pack.frozen",
+      "actor": "protocol-engine",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "evidenceIds": [
+          "evid_msqa3l8a_43cd1fe81f",
+          "evid_msqa3lch_4ee0bae383",
+          "evid_msqa3p8e_3415d5d4f7",
+          "evid_msqa3z9z_c0e3b0fb02"
+        ],
+        "statuses": {
+          "evid_msqa3l8a_43cd1fe81f": "verified",
+          "evid_msqa3lch_4ee0bae383": "verified",
+          "evid_msqa3p8e_3415d5d4f7": "verified",
+          "evid_msqa3z9z_c0e3b0fb02": "verified"
+        }
+      },
+      "timestamp": "2026-08-12T16:03:37.951Z",
+      "previousHash": "0edbf08103e8a90ff217317b88ff24ec2413cfba4218f7dd70f06fb742000839"
+    },
+    {
+      "id": "evt_90_8znh04hp",
+      "type": "review.submitted",
+      "actor": "run_msqa3zae_5755338d16",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "reviewId": "rev_msqa4ku7_e827c51d7a",
+        "recommendation": "candidate_a",
+        "evidenceSufficiency": "sufficient",
+        "unresolvedRisks": [
+          "Vite dev proxy /api forwarding and its buffering behavior toward SSE streams is unverified (vite.config.ts not covered by provided material) — if it buffers, events stall and the fallback polling cadence becomes the de facto latency ceiling",
+          "Target deployment chain (non-localhost) proxy/CDN buffering behavior for SSE is untested; X-Accel-Buffering: no-style handling is only documented, not validated",
+          "Full HumanView GET rebuild cost on the single-file JSON store is unmeasured — under event-storm refetch and 3–5s polling it is the dominant factor in end-to-end latency and idle load, which B's claim-5 also flags",
+          "Sticky-onerror fix relies on native EventSource auto-reconnect semantics across proxies/idle/sleep on the actual browser targets; deterministic coverage needs the jsdom test double path to be built",
+          "Multi-tab/multi-window concurrent subscriptions against HTTP/1.1 per-domain connection limits are unverified"
+        ]
+      },
+      "timestamp": "2026-08-12T16:04:05.887Z",
+      "previousHash": "3eba678a25699c4d7654cd949e5acfbc94f7fd7c89d8e0ac1aeefc7c3ea6ba62"
+    },
+    {
+      "id": "evt_91_33jmzamz",
+      "type": "decision.recorded",
+      "actor": "m1-operator",
+      "objectRef": "delib_msq9tftf_29278556c2",
+      "payload": {
+        "decisionId": "dec_msqa4kv0_83d071e5f8",
+        "humanAction": "approve",
+        "selectedRefs": [
+          "position:pos_msqa3l1i_36b1e20ea1"
+        ],
+        "rationale": "M1 operator gate: candidate_a. Both candidates converge on the same core decision — keep SSE, avoid WebSocket, fix the sticky onerror fallback — and the review evidence verifies both. Candidate A wins on depth and verification: (1) it documents the existing /api/stream implementation in verified detail (heartbeat, retry: 3000, no-cache/no-transform, per-deliberationId EventBus fan-out, stream route excluded from the write-path mutex) and explicitly grounds the choice in the PRD's reserved push channel, giving the strongest architecture fit evidence; (2) it carries actual empirical verification — node:http + built-in fetch streaming SSE integration test run and the confirmed absence of a global EventSource in Node v24.14.0 — which directly substantiates the testability rubric, while B makes no testability claims at all; (3) its hardening plan is more complete and lower-risk than B's: trailing debounce (~300ms) prevents run.update event storms from amplifying full HumanView refetches (a real risk B does not address), keeping the tested 5s polling as a first-class, deliberately testable fallback that covers all required failure modes (断线/代理/休眠/重启), and adding id:/Last-Event-ID as a near-zero-cost upgrade path is strictly better than B's blanket 'no replay needed' stance since MVP semantics don't require replay but the field is free. Complexity is comparable between the two (zero new runtime deps either way); A's added items are small and each maps to a stated risk or decision condition. B's recommendation is sound but thinner: its claims about SSE's resilience and latency parity with WebSocket are plausible and evidence-supported, yet its fallback story (native reconnect + delayed/parallel polling) is less precisely specified and untested, and its claim-7 admits the buffering-proxy risk without a mitigation path. Recommendation: candidate_a."
+      },
+      "timestamp": "2026-08-12T16:04:05.916Z",
+      "previousHash": "cb400c79669a6dd4696a352ed00805c907a970cfbf657d43ed14b3ccbdfa6873"
+    }
+  ],
+  "traceability": {
+    "resolvedRefs": [
+      "adr-008-realtime-channel@v1",
+      "adr-realtime-channel@v4",
+      "claim:claim-1",
+      "claim:claim-10",
+      "claim:claim-2",
+      "claim:claim-3",
+      "claim:claim-4",
+      "claim:claim-5",
+      "claim:claim-6",
+      "claim:claim-7",
+      "claim:claim-8",
+      "claim:claim-9",
+      "claim:claim_run_msq9tfum_5846e783be_1",
+      "claim:claim_run_msq9tfum_5846e783be_2",
+      "claim:claim_run_msq9tfum_5846e783be_3",
+      "claim:claim_run_msq9tfum_5846e783be_4",
+      "claim:claim_run_msq9tfum_5846e783be_5",
+      "claim:claim_run_msq9tfum_5846e783be_6",
+      "claim:claim_run_msq9tfum_5846e783be_7",
+      "evidence:evid_msqa3l8a_43cd1fe81f",
+      "evidence:evid_msqa3lch_4ee0bae383",
+      "evidence:evid_msqa3p8e_3415d5d4f7",
+      "evidence:evid_msqa3z9z_c0e3b0fb02",
+      "position:pos_msqa3l1a_8e2d36e26b",
+      "position:pos_msqa3l1i_36b1e20ea1",
+      "src_api_server@v1",
+      "src_event_bus@v1",
+      "src_package_json@v1",
+      "src_prd_realtime_excerpt@v1",
+      "src_web_use_deliberation@v1",
+      "sse-smoke-test-report@v1"
+    ],
+    "unresolvedRefs": []
+  }
+}

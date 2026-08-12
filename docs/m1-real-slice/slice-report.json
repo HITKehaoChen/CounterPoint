@@ -1,0 +1,346 @@
+{
+  "formatVersion": "m1-slice-report/0.1.0",
+  "generatedAt": "2026-08-12T16:04:05.934Z",
+  "deliberationId": "delib_msq9tftf_29278556c2",
+  "task": {
+    "problem": "CounterPoint Web Console 当前通过 /api/stream（SSE）+ 5 秒轮询兜底获取实时状态。M1 需要一个真实技术决策：实时更新通道应保持 SSE（现状）、改用 WebSocket，还是退化为纯轮询？",
+    "state": "decided",
+    "seed": "m1-real-slice-2026-08-12"
+  },
+  "agents": [
+    {
+      "worker": "Worker A",
+      "runtime": "Chrys",
+      "model": "deepseek-v4-pro",
+      "provider": "chrys/deepseek-openai",
+      "costBasis": "estimated-token-based"
+    },
+    {
+      "worker": "Worker B",
+      "runtime": "Claude Code",
+      "model": "deepseek-v4-pro[1m]",
+      "provider": "claude-code/anthropic-deepseek",
+      "costBasis": "reported-by-cli"
+    },
+    {
+      "worker": "Reviewer",
+      "runtime": "Claude Code",
+      "model": "deepseek-v4-flash",
+      "provider": "claude-code/anthropic-deepseek",
+      "costBasis": "reported-by-cli",
+      "anonymity": "randomized-anonymous-order"
+    }
+  ],
+  "metrics": {
+    "uniqueClaims": 17,
+    "uniqueValidClaims": 17,
+    "totalClaims": 17,
+    "evidenceCoverage": 1,
+    "verifiedEvidenceCount": 4,
+    "contextLeaks": 0,
+    "totalCostUsd": 1.818597,
+    "totalElapsedMs": 519753,
+    "runs": [
+      {
+        "runId": "run_msq9tfuk_7c6bd1c931",
+        "participant": "Worker A",
+        "phase": "blind_run",
+        "status": "committed",
+        "model": "deepseek-v4-pro",
+        "provider": "chrys/deepseek-openai",
+        "cost": 0.344325,
+        "costBasis": "estimated-token-based",
+        "usage": {
+          "inputTokens": 29005,
+          "outputTokens": 7972,
+          "cacheReadInputTokens": 8320
+        },
+        "elapsedMs": 174617
+      },
+      {
+        "runId": "run_msq9tfum_5846e783be",
+        "participant": "Worker B",
+        "phase": "blind_run",
+        "status": "committed",
+        "model": "deepseek-v4-pro[1m]",
+        "provider": "claude-code/anthropic-deepseek",
+        "cost": 1.251647,
+        "costBasis": "reported-by-cli",
+        "usage": {
+          "inputTokens": 103073,
+          "outputTokens": 25194,
+          "cacheReadInputTokens": 212864
+        },
+        "elapsedMs": 467158
+      },
+      {
+        "runId": "run_msqa3zae_5755338d16",
+        "participant": "Reviewer",
+        "phase": "reviewing",
+        "status": "committed",
+        "model": "deepseek-v4-flash",
+        "provider": "claude-code/anthropic-deepseek",
+        "cost": 0.22262500000000002,
+        "costBasis": "reported-by-cli",
+        "elapsedMs": 27928
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "id": "evid_msqa3l8a_43cd1fe81f",
+      "kind": "command_result",
+      "status": "verified",
+      "command": "node",
+      "args": [
+        "scripts/evidence-scan.mjs",
+        "SSE",
+        "EventSource",
+        "WebSocket",
+        "setInterval",
+        "--",
+        "package.json",
+        "apps/api",
+        "apps/web",
+        "src"
+      ],
+      "description": "code search: existing realtime transport patterns (SSE/EventSource/WebSocket/polling)",
+      "exitCode": 0,
+      "targetRefs": [
+        "claim:claim-1",
+        "claim:claim-2",
+        "claim:claim-3",
+        "claim:claim-4",
+        "claim:claim-5",
+        "claim:claim-6",
+        "claim:claim-7",
+        "claim:claim_run_msq9tfum_5846e783be_1",
+        "claim:claim_run_msq9tfum_5846e783be_2",
+        "claim:claim_run_msq9tfum_5846e783be_3",
+        "claim:claim_run_msq9tfum_5846e783be_4",
+        "claim:claim_run_msq9tfum_5846e783be_5",
+        "claim:claim_run_msq9tfum_5846e783be_6",
+        "claim:claim_run_msq9tfum_5846e783be_7",
+        "claim:claim-8",
+        "claim:claim-9",
+        "claim:claim-10"
+      ],
+      "summary": "exit 0 (expected 0) in 167ms; stdout 1519 bytes"
+    },
+    {
+      "id": "evid_msqa3lch_4ee0bae383",
+      "kind": "command_result",
+      "status": "verified",
+      "command": "node",
+      "args": [
+        "scripts/evidence-scan.mjs",
+        "text/event-stream",
+        "retry: 3000",
+        "heartbeat",
+        "EventSource",
+        "--",
+        "apps/api",
+        "apps/web",
+        "src"
+      ],
+      "description": "code search: SSE endpoint specifics (event-stream, retry, heartbeat)",
+      "exitCode": 0,
+      "targetRefs": [
+        "claim:claim-1",
+        "claim:claim-2",
+        "claim:claim-3",
+        "claim:claim-4",
+        "claim:claim-5",
+        "claim:claim-6",
+        "claim:claim-7",
+        "claim:claim_run_msq9tfum_5846e783be_1",
+        "claim:claim_run_msq9tfum_5846e783be_2",
+        "claim:claim_run_msq9tfum_5846e783be_3",
+        "claim:claim_run_msq9tfum_5846e783be_4",
+        "claim:claim_run_msq9tfum_5846e783be_5",
+        "claim:claim_run_msq9tfum_5846e783be_6",
+        "claim:claim_run_msq9tfum_5846e783be_7",
+        "claim:claim-8",
+        "claim:claim-9",
+        "claim:claim-10"
+      ],
+      "summary": "exit 0 (expected 0) in 147ms; stdout 641 bytes"
+    },
+    {
+      "id": "evid_msqa3p8e_3415d5d4f7",
+      "kind": "command_result",
+      "status": "verified",
+      "command": "node",
+      "args": [
+        "C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js",
+        "run",
+        "typecheck"
+      ],
+      "description": "real TypeScript typecheck of the current repository",
+      "exitCode": 0,
+      "targetRefs": [
+        "claim:claim-1",
+        "claim:claim-2",
+        "claim:claim-3",
+        "claim:claim-4",
+        "claim:claim-5",
+        "claim:claim-6",
+        "claim:claim-7",
+        "claim:claim_run_msq9tfum_5846e783be_1",
+        "claim:claim_run_msq9tfum_5846e783be_2",
+        "claim:claim_run_msq9tfum_5846e783be_3",
+        "claim:claim_run_msq9tfum_5846e783be_4",
+        "claim:claim_run_msq9tfum_5846e783be_5",
+        "claim:claim_run_msq9tfum_5846e783be_6",
+        "claim:claim_run_msq9tfum_5846e783be_7",
+        "claim:claim-8",
+        "claim:claim-9",
+        "claim:claim-10",
+        "claim:claim-1",
+        "claim:claim-2",
+        "claim:claim-3",
+        "claim:claim-4",
+        "claim:claim-6",
+        "claim:claim_run_msq9tfum_5846e783be_1",
+        "claim:claim_run_msq9tfum_5846e783be_2",
+        "claim:claim_run_msq9tfum_5846e783be_3",
+        "claim:claim_run_msq9tfum_5846e783be_4",
+        "claim:claim_run_msq9tfum_5846e783be_5",
+        "claim:claim_run_msq9tfum_5846e783be_6",
+        "claim:claim-8",
+        "claim:claim-9",
+        "claim:claim-10"
+      ],
+      "summary": "exit 0 (expected 0) in 5030ms; stdout 48 bytes"
+    },
+    {
+      "id": "evid_msqa3z9z_c0e3b0fb02",
+      "kind": "command_result",
+      "status": "verified",
+      "command": "node",
+      "args": [
+        "C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js",
+        "test"
+      ],
+      "description": "real test suite (unit + integration + web)",
+      "exitCode": 0,
+      "targetRefs": [
+        "claim:claim-1",
+        "claim:claim-2",
+        "claim:claim-3",
+        "claim:claim-4",
+        "claim:claim-5",
+        "claim:claim-6",
+        "claim:claim-7",
+        "claim:claim_run_msq9tfum_5846e783be_1",
+        "claim:claim_run_msq9tfum_5846e783be_2",
+        "claim:claim_run_msq9tfum_5846e783be_3",
+        "claim:claim_run_msq9tfum_5846e783be_4",
+        "claim:claim_run_msq9tfum_5846e783be_5",
+        "claim:claim_run_msq9tfum_5846e783be_6",
+        "claim:claim_run_msq9tfum_5846e783be_7",
+        "claim:claim-8",
+        "claim:claim-9",
+        "claim:claim-10",
+        "claim:claim-1",
+        "claim:claim-2",
+        "claim:claim-3",
+        "claim:claim-4",
+        "claim:claim-6",
+        "claim:claim_run_msq9tfum_5846e783be_1",
+        "claim:claim_run_msq9tfum_5846e783be_2",
+        "claim:claim_run_msq9tfum_5846e783be_3",
+        "claim:claim_run_msq9tfum_5846e783be_4",
+        "claim:claim_run_msq9tfum_5846e783be_5",
+        "claim:claim_run_msq9tfum_5846e783be_6",
+        "claim:claim-8",
+        "claim:claim-9",
+        "claim:claim-10"
+      ],
+      "summary": "exit 0 (expected 0) in 13007ms; stdout 8043 bytes"
+    }
+  ],
+  "review": {
+    "recommendation": "candidate_a",
+    "evidenceSufficiency": "sufficient",
+    "rubricScores": {
+      "fit": 5,
+      "latency": 4,
+      "complexity": 4,
+      "reliability": 5,
+      "testability": 5
+    },
+    "unresolvedRisks": [
+      "Vite dev proxy /api forwarding and its buffering behavior toward SSE streams is unverified (vite.config.ts not covered by provided material) — if it buffers, events stall and the fallback polling cadence becomes the de facto latency ceiling",
+      "Target deployment chain (non-localhost) proxy/CDN buffering behavior for SSE is untested; X-Accel-Buffering: no-style handling is only documented, not validated",
+      "Full HumanView GET rebuild cost on the single-file JSON store is unmeasured — under event-storm refetch and 3–5s polling it is the dominant factor in end-to-end latency and idle load, which B's claim-5 also flags",
+      "Sticky-onerror fix relies on native EventSource auto-reconnect semantics across proxies/idle/sleep on the actual browser targets; deterministic coverage needs the jsdom test double path to be built",
+      "Multi-tab/multi-window concurrent subscriptions against HTTP/1.1 per-domain connection limits are unverified"
+    ],
+    "rationale": "Both candidates converge on the same core decision — keep SSE, avoid WebSocket, fix the sticky onerror fallback — and the review evidence verifies both. Candidate A wins on depth and verification: (1) it documents the existing /api/stream implementation in verified detail (heartbeat, retry: 3000, no-cache/no-transform, per-deliberationId EventBus fan-out, stream route excluded from the write-path mutex) and explicitly grounds the choice in the PRD's reserved push channel, giving the strongest architecture fit evidence; (2) it carries actual empirical verification — node:http + built-in fetch streaming SSE integration test run and the confirmed absence of a global EventSource in Node v24.14.0 — which directly substantiates the testability rubric, while B makes no testability claims at all; (3) its hardening plan is more complete and lower-risk than B's: trailing debounce (~300ms) prevents run.update event storms from amplifying full HumanView refetches (a real risk B does not address), keeping the tested 5s polling as a first-class, deliberately testable fallback that covers all required failure modes (断线/代理/休眠/重启), and adding id:/Last-Event-ID as a near-zero-cost upgrade path is strictly better than B's blanket 'no replay needed' stance since MVP semantics don't require replay but the field is free. Complexity is comparable between the two (zero new runtime deps either way); A's added items are small and each maps to a stated risk or decision condition. B's recommendation is sound but thinner: its claims about SSE's resilience and latency parity with WebSocket are plausible and evidence-supported, yet its fallback story (native reconnect + delayed/parallel polling) is less precisely specified and untested, and its claim-7 admits the buffering-proxy risk without a mitigation path. Recommendation: candidate_a.",
+    "reviewOrder": [
+      "pos_msqa3l1i_36b1e20ea1",
+      "pos_msqa3l1a_8e2d36e26b"
+    ],
+    "anonymousMapping": [
+      {
+        "candidateId": "A",
+        "originalPositionId": "pos_msqa3l1i_36b1e20ea1"
+      },
+      {
+        "candidateId": "B",
+        "originalPositionId": "pos_msqa3l1a_8e2d36e26b"
+      }
+    ]
+  },
+  "decision": {
+    "humanAction": "approve",
+    "selectedRefs": [
+      "position:pos_msqa3l1i_36b1e20ea1"
+    ],
+    "conditions": [
+      "上线前为 SSE 增加 last-event-id/EventSource 重放，验证重启不丢事件",
+      "用真实浏览器会话做断线/休眠恢复测试",
+      "若部署演进为多进程或多用户，重新评估 WebSocket/广播方案"
+    ],
+    "dissent": [
+      "Vite dev proxy /api forwarding and its buffering behavior toward SSE streams is unverified (vite.config.ts not covered by provided material) — if it buffers, events stall and the fallback polling cadence becomes the de facto latency ceiling",
+      "Target deployment chain (non-localhost) proxy/CDN buffering behavior for SSE is untested; X-Accel-Buffering: no-style handling is only documented, not validated",
+      "Full HumanView GET rebuild cost on the single-file JSON store is unmeasured — under event-storm refetch and 3–5s polling it is the dominant factor in end-to-end latency and idle load, which B's claim-5 also flags",
+      "Sticky-onerror fix relies on native EventSource auto-reconnect semantics across proxies/idle/sleep on the actual browser targets; deterministic coverage needs the jsdom test double path to be built",
+      "Multi-tab/multi-window concurrent subscriptions against HTTP/1.1 per-domain connection limits are unverified"
+    ],
+    "rationale": "M1 operator gate: candidate_a. Both candidates converge on the same core decision — keep SSE, avoid WebSocket, fix the sticky onerror fallback — and the review evidence verifies both. Candidate A wins on depth and verification: (1) it documents the existing /api/stream implementation in verified detail (heartbeat, retry: 3000, no-cache/no-transform, per-deliberationId EventBus fan-out, stream route excluded from the write-path mutex) and explicitly grounds the choice in the PRD's reserved push channel, giving the strongest architecture fit evidence; (2) it carries actual empirical verification — node:http + built-in fetch streaming SSE integration test run and the confirmed absence of a global EventSource in Node v24.14.0 — which directly substantiates the testability rubric, while B makes no testability claims at all; (3) its hardening plan is more complete and lower-risk than B's: trailing debounce (~300ms) prevents run.update event storms from amplifying full HumanView refetches (a real risk B does not address), keeping the tested 5s polling as a first-class, deliberately testable fallback that covers all required failure modes (断线/代理/休眠/重启), and adding id:/Last-Event-ID as a near-zero-cost upgrade path is strictly better than B's blanket 'no replay needed' stance since MVP semantics don't require replay but the field is free. Complexity is comparable between the two (zero new runtime deps either way); A's added items are small and each maps to a stated risk or decision condition. B's recommendation is sound but thinner: its claims about SSE's resilience and latency parity with WebSocket are plausible and evidence-supported, yet its fallback story (native reconnect + delayed/parallel polling) is less precisely specified and untested, and its claim-7 admits the buffering-proxy risk without a mitigation path. Recommendation: candidate_a."
+  },
+  "humanInterventions": [
+    {
+      "at": "2026-08-12T15:55:26.202Z",
+      "actor": "m1-operator",
+      "action": "freeze",
+      "detail": "Task Packet frozen (delib_msq9tftf_29278556c2)"
+    },
+    {
+      "at": "2026-08-12T16:03:19.569Z",
+      "actor": "m1-operator",
+      "action": "challenge-response",
+      "detail": "Challenge chl_msqa3l2x_e4a577d78a answered with Worker B committed position content"
+    },
+    {
+      "at": "2026-08-12T16:03:37.951Z",
+      "actor": "m1-operator",
+      "action": "evidence",
+      "detail": "Selected and executed 4 real verification commands (2 code searches, typecheck, tests)"
+    },
+    {
+      "at": "2026-08-12T16:04:05.925Z",
+      "actor": "m1-operator",
+      "action": "human-gate",
+      "detail": "Human gate approve; recommendation=candidate_a; decision=dec_msqa4kv0_83d071e5f8"
+    }
+  ],
+  "artifacts": {
+    "decisionPackMarkdown": "C:\\Users\\tgyzc\\Documents\\CounterPoint\\data\\out\\decision-pack-delib_msq9tftf_29278556c2.md",
+    "decisionPackJson": "C:\\Users\\tgyzc\\Documents\\CounterPoint\\data\\out\\decision-pack-delib_msq9tftf_29278556c2.json",
+    "store": "C:\\Users\\tgyzc\\Documents\\CounterPoint\\data\\m1\\store.json"
+  }
+}

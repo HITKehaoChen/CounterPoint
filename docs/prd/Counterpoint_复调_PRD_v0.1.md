@@ -13,6 +13,11 @@
 | 产品类型 | Evidence-Centered Multi-Agent Deliberation Workspace |
 | 第一阶段形态 | 单用户、本地优先、面向工程决策的 Web 工作台 |
 
+> **修订说明（2026-08-12）**：引入 **Workspace / WorkItem / ResearchRound** 三层领域模型
+> （见 [体验重构设计 v0.2](../superpowers/specs/2026-08-12-workspace-first-design.md)），
+> 并据此重写第 8、10、11 节。第 9 节协议级功能需求保持不变，其执行单元为 ResearchRound；
+> 工作项级需求将在 PRD v0.2 中正式展开。
+
 ---
 
 ## 0. 决策摘要
@@ -366,73 +371,79 @@ tools:
 
 ---
 
-## 8. MVP 用户旅程
+## 8. MVP 用户旅程（工作空间模型）
 
-### 8.1 创建项目
+### 8.0 领域模型速览
 
-用户创建 Project，配置：
+- **Workspace（常驻）**：长期存在的项目现实容器，保存共享上下文与知识；
+- **WorkItem（持续）**：以问题 / 需求 / Bug / 假设 / 技术决策为对象的协作单元，拥有 Human Owner，可跨数小时到数周持续演化；
+- **ResearchRound（一次）**：某个时刻冻结 WorkItem 上下文，执行一次 Counterpoint 协议，产出不可变 Decision Snapshot。
 
-- 项目名称与说明；
+### 8.1 创建 Workspace
+
+用户创建 Workspace（代码中可暂时保留 `Project` 名称），配置：
+
+- 名称与说明；
 - 本地文件或 Git 仓；
 - 可用 Agent Adapter；
 - 可用 Verifier；
 - 默认数据保留和权限策略。
 
-### 8.2 创建 Deliberation
+Workspace 是长期实体，可包含任意数量的 WorkItem。
 
-用户选择 `Technical Decision Review` 模板，填写问题、目标、约束、Rubric 和期望交付。
+### 8.2 新建 WorkItem
 
-系统在冻结前执行 Task Packet 完整性检查，提示缺少：
+用户选择类型（v1：问题 / 需求 / Bug / 假设 / 技术决策），按类型模板填写：
 
-- 决策对象；
-- 成功标准；
-- 权威来源；
-- 可验证条件；
-- 已知边界；
-- 人工责任人。
+- Bug：复现步骤、环境、期望/实际行为；
+- 需求：验收标准、优先级；
+- 假设：预测、实验设计、测量方式；
+- 技术决策：沿用目标、约束、Rubric、期望交付；
+- 问题：自由描述 + 已知边界。
 
-### 8.3 运行盲态候选
+每个 WorkItem 必须绑定 Human Owner（单用户版本默认当前用户）。系统可提示缺失项，但不强制一次填满；WorkItem 可以在生命周期中持续补充。
 
-系统并行启动 Worker A/B。用户可以看到运行状态、耗时和工具事件，但在 Commit 前不能查看候选正文，以避免人工提前干预破坏盲态实验。
+### 8.3 轻量协作流
 
-### 8.4 承诺与披露
+WorkItem 详情页以“问题、当前结论、未知项、证据缺口”为中心。人类与按需 Agent 可追加结构化对象：
 
-所有 Worker 提交后，系统同时披露候选，并自动生成：
+- `Claim`：默认 Tentative；获得证据 → Supported；被质询 → Contested；证据推翻 → Refuted；人工或规则确认 → Promoted；新证据替代 → Superseded；
+- `Evidence`：保持原工作项/轮次作用域，可被引用；
+- `Question`：等待人类或 Agent 回答；
+- `Update`：进展说明。
 
-- 共同结论；
-- 冲突结论；
-- 独有 Claim；
-- 引用相同但解释不同的 Evidence；
-- 未被任何候选覆盖的 Rubric 项。
+只有 `Promoted` 的 Claim 默认进入 Workspace Knowledge 视图。
 
-### 8.5 质询与验证
+### 8.4 发起 Research Round（深度研究）
 
-每个 Worker 针对另一候选提出有限数量的高价值 Challenge。系统将可工具验证的问题路由给 Verifier，将不可验证问题保留给 Reviewer 或 Human Owner。
+用户显式发起（系统可建议，但不自动执行）。系统从 WorkItem 当前上下文生成**冻结的 Task Packet**（记录 WorkItem 版本快照与来源），并行启动隔离 Worker，执行完整协议。盲态阶段用户只看到运行状态、耗时与承诺哈希，不查看候选正文。
 
-### 8.6 匿名裁决
+### 8.5 承诺与披露（协议内）
 
-Reviewer 看到匿名随机排序的 Candidate X/Y、Rubric、Evidence Pack 和未解决分歧，输出：
+所有 Worker 提交后统一披露，候选以 Candidate X/Y 匿名展示，并自动生成分歧矩阵（共同结论、冲突结论、独有 Claim、证据引用分歧、未被覆盖的 Rubric 项）。
 
-- 分项评分；
-- 关键优势与失败风险；
-- 证据充分度；
-- 推荐结果；
-- 是否需要补证或人工升级。
+### 8.6 质询与验证（协议内）
 
-### 8.7 人工批准与导出
+每个 Worker 针对另一候选提出有限数量的高价值 Challenge；可工具验证的问题路由给 Verifier，不可验证问题保留给 Reviewer 或 Human Owner。
 
-用户可以：
+### 8.7 匿名裁决与人工决策（协议内）
 
-- 批准 Reviewer 推荐；
-- 选择另一候选并说明原因；
-- 合并候选；
-- 请求补证；
-- 标记无法裁决；
-- 导出 Decision Pack 或 ADR。
+Reviewer 按固定 Rubric 匿名评审；Human Owner 批准、否决、合并、补证、升级或标记无法裁决，均留痕。
+
+### 8.8 结果沉淀与演进
+
+- 一轮 ResearchRound 生成**不可变 Decision Snapshot**（含 Decision Pack 导出）；
+- WorkItem 保存**当前结论**与**完整历史演进**（引用每一轮，但不覆盖旧轮次）；
+- 用户补充新证据后可以再次发起 Research Round；
+- 多轮结论发生变化时，WorkItem 保留每一轮的快照与决策记录。
 
 ---
 
 ## 9. 功能需求
+
+> 本节需求以 **ResearchRound（协议执行单元）** 为对象，与现有协议内核一一对应。
+> 工作项级能力（WorkItem 生命周期、轻量协作流、知识提升门禁、关系引用）见第 8、10 节，
+> 其完整需求清单将在 PRD v0.2 中展开。
 
 ### 9.1 Project 与 Task Packet
 
@@ -523,28 +534,32 @@ Reviewer 看到匿名随机排序的 Candidate X/Y、Rubric、Evidence Pack 和�
 
 ### 10.1 核心页面
 
-1. **Project Dashboard**
-   - 项目、数据源、Agent Adapter、Verifier、最近任务。
-2. **New Deliberation Wizard**
-   - 问题、约束、Rubric、Source、参与者、协议预览。
-3. **Deliberation Console**
-   - Overview：当前阶段和门禁；
-   - Runs：Agent 状态、成本、Context View；
-   - Artifacts：共享产物、版本、Diff；
-   - Claims：主张、分歧、Challenge；
-   - Evidence：证据状态和来源；
-   - Decision：Reviewer 评分与 Human Gate；
+1. **Workspace 首页（全局）**
+   - 全局首页展示 Workspace 列表；进入 Workspace 后首页为 WorkItem 看板（按类型与状态分组）。
+2. **New WorkItem Wizard**
+   - 选择类型（问题 / 需求 / Bug / 假设 / 技术决策）→ 类型模板表单 → 预览；
+   - 不强制一次填满完整 Task Packet；可后续发起深度研究。
+3. **WorkItem 详情页**
+   - Overview：问题、当前结论、未知项、证据缺口、Human Owner、关联项；
+   - 协作流：Claim / Evidence / Question / Update 持续追加，`@Agent` 定向提问与“邀请分析”入口；
+   - Research Rounds：历史轮次列表（每轮的冻结快照、候选、证据、评审、决策），以及“发起深度研究”操作；
+   - 知识：Promoted Claim 与 Workspace Knowledge 引用；
    - Timeline：不可变事件历史。
-4. **Decision Pack Viewer**
-   - 适合阅读、分享和导出的最终决策视图。
+4. **Research Round 视图**（由 WorkItem 详情进入）
+   - 保留现有七个视图：Overview、Runs、Artifacts、Claims、Evidence、Decision、Timeline，作为一轮协议的执行与回看界面。
+5. **Decision Snapshot Viewer**
+   - 一轮 ResearchRound 的不可变结果，适合阅读、分享与导出（原 Decision Pack Viewer）。
 
-### 10.2 Console 默认展示原则
+### 10.2 展示原则
 
 - Blind 阶段展示“运行中/已提交”，不展示候选正文；
 - Reveal 后以 Candidate X/Y 展示，不默认显示作者和模型；
 - Evidence 与 Opinion 使用不同视觉样式；
 - `verified`、`inconclusive`、`unverified` 不得仅靠颜色区分；
-- 未解决分歧必须在最终决策页显式出现，不能被摘要隐藏。
+- 未解决分歧必须在最终决策页显式出现，不能被摘要隐藏；
+- WorkItem 的“当前结论”与“历史轮次结论”必须区分展示；
+- 只有 `Promoted` 的 Claim 进入 Workspace Knowledge 视图，其余按 Tentative / Supported / Contested / Refuted / Superseded 标注；
+- 系统只建议发起 Research Round，不自动执行。
 
 ---
 
@@ -555,7 +570,10 @@ Reviewer 看到匿名随机排序的 Candidate X/Y、Rubric、Evidence Pack 和�
 ```mermaid
 flowchart TD
     U["Human Owner"] --> UI["Web Console"]
-    UI --> PE["Protocol Engine"]
+    UI --> WS["Workspace / WorkItem Service"]
+    WS --> KN["Workspace Knowledge"]
+    WS --> WI["WorkItem Store"]
+    WS --> PE["Protocol Engine (ResearchRound)"]
 
     PE --> CP["Context Policy Engine"]
     PE --> AG["Agent Gateway"]
@@ -572,6 +590,8 @@ flowchart TD
     AR --> DS["Postgres + File/Git Store"]
     EL --> DS
     DR --> DS
+    WI --> DS
+    KN --> DS
     PE --> EV["Append-only Event Log"]
     EV --> DS
 ```
@@ -580,8 +600,10 @@ flowchart TD
 
 | 组件 | 职责 | MVP 实现原则 |
 |---|---|---|
-| Web Console | 创建任务、观察阶段、阅读产物、人工决策 | 单用户界面；不先做复杂权限后台 |
-| Protocol Engine | 状态机、轮次、门禁、超时、任务调度 | 确定性代码；状态写入数据库 |
+| Web Console | 创建/回看 WorkItem、观察协作流、发起并观察 ResearchRound、人工决策 | 单用户界面；不先做复杂权限后台 |
+| Workspace / WorkItem Service | WorkItem 生命周期、类型模板、关联关系、协作流对象（Claim/Question/Update） | 与协议引擎分离；只做聚合、模板与提升门禁 |
+| Workspace Knowledge | 保存带适用范围的 Source/Evidence/Decision 引用与 Promoted Claim 视图 | 引用而非复制；默认不自动提升 |
+| Protocol Engine | ResearchRound 的状态机、轮次、门禁、超时、任务调度 | 确定性代码；状态写入数据库；不因层级变化改协议 |
 | Context Policy Engine | 计算对象可见性与 Run Context View | 默认拒绝；显式允许；每次生成快照 |
 | Agent Gateway | 统一调用不同 Agent/CLI/API | Adapter 接口；首版只需本地进程适配器和测试适配器 |
 | Isolated Workspace | Agent 私有文件、工具与运行环境 | 本地目录或容器隔离；每个 Run 唯一路径 |
@@ -621,6 +643,18 @@ Protocol Engine 负责合法状态转换。Agent 可以建议下一步，但不�
 
 MVP 使用数据库状态机和后台 Job 执行；在证明长任务、分布式恢复和高并发需求前，不引入复杂工作流集群。
 
+#### ADR-008：三层领域模型（Workspace / WorkItem / ResearchRound）
+
+Workspace 是长期现实容器，WorkItem 是持续协作单元，Deliberation 的语义是 WorkItem 下的一次
+ResearchRound（协议执行单元）。`kind` 属于 WorkItem，不属于协议；Task Packet 是 ResearchRound
+启动时从 WorkItem 当前上下文生成的冻结快照，必须记录所看到的 WorkItem 版本。
+
+#### ADR-009：知识引用而非复制
+
+Evidence 保留在原始 WorkItem/ResearchRound 作用域内；Workspace Knowledge 只保存带
+`scope / applies_when / expires_at / provenance` 的引用。Claim 只有提升到 `Promoted`
+后才默认进入工作空间知识视图，避免把未经验证的推断变成“公共事实”。
+
 ### 11.4 建议技术栈（待技术设计确认）
 
 | 层 | 建议 |
@@ -647,7 +681,8 @@ counterpoint/
 ├── packages/
 │   ├── protocol/               # 状态机、门禁、轮次
 │   ├── context-policy/         # 可见性规则与 Context View
-│   ├── schemas/                # Task/Artifact/Claim/Evidence/Decision
+│   ├── schemas/                # Workspace/WorkItem/ResearchRound 及协议对象契约
+│   ├── workspace/              # WorkItem 生命周期、类型模板、协作流、知识提升门禁
 │   ├── artifact-registry/      # 版本、哈希、依赖、Diff
 │   ├── agent-adapters/         # Agent 接口与适配器
 │   └── verifier-adapters/      # 命令、测试、人工证据

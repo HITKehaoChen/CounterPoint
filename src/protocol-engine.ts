@@ -10,6 +10,7 @@ import type {
   Event,
   Evidence,
   EvidenceRequest,
+  KnowledgeRef,
   Participant,
   Position,
   Project,
@@ -17,8 +18,14 @@ import type {
   Review,
   SourceBinding,
   TaskPacket,
+  WorkItem,
+  WorkItemClaim,
+  WorkItemEntry,
+  WorkItemKind,
+  WorkItemRelation,
+  WorkItemStatus,
 } from './schemas.ts';
-import { emptyDatabase } from './schemas.ts';
+import { emptyDatabase, KnowledgeRefSchema, migrateDatabase } from './schemas.ts';
 import { formatVersionRef, hashJson, parseVersionRef, sha256 } from './hashing.ts';
 import { newId } from './ids.ts';
 import { appendEvent } from './events.ts';
@@ -86,6 +93,8 @@ export interface CreateDeliberationInput {
   rubric: TaskPacket['rubric'];
   deliverable?: string;
   timeoutPolicy?: Deliberation['timeoutPolicy'];
+  /** Links this ResearchRound to a WorkItem and freezes its current version. */
+  workItemId?: string;
 }
 
 export interface AddParticipantInput {
@@ -191,6 +200,202 @@ export class ProtocolEngine {
     return project;
   }
 
+  // -------------------------------------------------------------------------
+  // Work items (Workspace / WorkItem / ResearchRound, PRD §8)
+  // -------------------------------------------------------------------------
+
+  createWorkItem(input: {
+    workspaceId: string;
+    kind: WorkItemKind;
+    title: string;
+    description?: string;
+    ownerId?: string;
+    templateFields?: Record<string, unknown>;
+  }): WorkItem {
+    if (!input.title.trim()) throw new Error('Work item title is required');
+    const workItem: WorkItem = {
+      id: newId('wi'),
+      workspaceId: input.workspaceId,
+      kind: input.kind,
+      title: input.title,
+      description: input.description,
+      ownerId: input.ownerId ?? 'human-owner',
+      status: 'open',
+      templateFields: input.templateFields ?? {},
+      currentConclusionRefs: [],
+      knowledgeRefs: [],
+      relations: [],
+      entries: [],
+      version: 1,
+      createdAt: this.now().toISOString(),
+      updatedAt: this.now().toISOString(),
+    };
+    this.db.workItems.push(workItem);
+    this.mutate(`work_item.created ${workItem.id}`, {
+      type: 'work_item.created',
+      actor: workItem.ownerId,
+      objectRef: workItem.id,
+      payload: {
+        workItemId: workItem.id,
+        workspaceId: workItem.workspaceId,
+        kind: workItem.kind,
+        title: workItem.title,
+      },
+    });
+    this.persist();
+    return workItem;
+  }
+
+  getWorkItem(workItemId: string): WorkItem {
+    return this.requireWorkItem(workItemId);
+  }
+
+  listWorkItems(workspaceId: string): WorkItem[] {
+    return this.db.workItems.filter((item) => item.workspaceId === workspaceId);
+  }
+
+  updateWorkItem(
+    workItemId: string,
+    patch: {
+      description?: string;
+      status?: WorkItemStatus;
+      templateFields?: Record<string, unknown>;
+      currentConclusionRefs?: string[];
+      relations?: WorkItemRelation[];
+    },
+  ): WorkItem {
+    const workItem = this.requireWorkItem(workItemId);
+    if (patch.description !== undefined) workItem.description = patch.description;
+    if (patch.status !== undefined) workItem.status = patch.status;
+    if (patch.templateFields !== undefined) workItem.templateFields = patch.templateFields;
+    if (patch.currentConclusionRefs !== undefined) {
+      workItem.currentConclusionRefs = [...patch.currentConclusionRefs];
+    }
+    if (patch.relations !== undefined) workItem.relations = [...patch.relations];
+    workItem.version += 1;
+    workItem.updatedAt = this.now().toISOString();
+    if (workItem.status === 'resolved' && !workItem.resolvedAt) {
+      workItem.resolvedAt = this.now().toISOString();
+    }
+    this.mutate(`work_item.updated ${workItem.id}`, {
+      type: 'work_item.updated',
+      actor: workItem.ownerId,
+      objectRef: workItem.id,
+      payload: { workItemId: workItem.id, status: workItem.status, version: workItem.version },
+    });
+    this.persist();
+    return workItem;
+  }
+
+  addWorkItemEntry(
+    workItemId: string,
+    input:
+      | { kind: 'claim'; statement: string; evidenceRefs?: string[]; author: string }
+      | { kind: 'question'; text: string; assignee: 'human' | 'agent'; author: string }
+      | { kind: 'update'; text: string; author: string },
+  ): WorkItemEntry {
+    const workItem = this.requireWorkItem(workItemId);
+    const entry: WorkItemEntry =
+      input.kind === 'claim'
+        ? {
+            id: newId('e'),
+            kind: 'claim',
+            statement: input.statement,
+            status: 'tentative',
+            evidenceRefs: input.evidenceRefs ?? [],
+            author: input.author,
+            createdAt: this.now().toISOString(),
+          }
+        : input.kind === 'question'
+          ? {
+              id: newId('e'),
+              kind: 'question',
+              text: input.text,
+              assignee: input.assignee,
+              author: input.author,
+              createdAt: this.now().toISOString(),
+            }
+          : {
+              id: newId('e'),
+              kind: 'update',
+              text: input.text,
+              author: input.author,
+              createdAt: this.now().toISOString(),
+            };
+    workItem.entries.push(entry);
+    workItem.version += 1;
+    workItem.updatedAt = this.now().toISOString();
+    this.mutate(`work_item.entry.added ${entry.id}`, {
+      type: 'work_item.entry.added',
+      actor: entry.author,
+      objectRef: workItem.id,
+      payload: { workItemId: workItem.id, entryId: entry.id, kind: entry.kind },
+    });
+    this.persist();
+    return entry;
+  }
+
+  transitionWorkItemClaim(
+    workItemId: string,
+    claimId: string,
+    to: WorkItemClaim['status'],
+  ): WorkItemClaim {
+    const workItem = this.requireWorkItem(workItemId);
+    const claim = this.findWorkItemClaim(workItem, claimId);
+    const allowed = ALLOWED_CLAIM_TRANSITIONS[claim.status];
+    if (!allowed.includes(to)) {
+      throw new Error(`Cannot transition claim ${claimId} from ${claim.status} to ${to}`);
+    }
+    claim.status = to;
+    workItem.version += 1;
+    workItem.updatedAt = this.now().toISOString();
+    this.mutate(`work_item.claim.updated ${claim.id}`, {
+      type: 'work_item.claim.updated',
+      actor: workItem.ownerId,
+      objectRef: workItem.id,
+      payload: { workItemId: workItem.id, claimId: claim.id, status: claim.status },
+    });
+    this.persist();
+    return claim;
+  }
+
+  promoteWorkItemClaim(workItemId: string, claimId: string): WorkItemClaim {
+    const workItem = this.requireWorkItem(workItemId);
+    const claim = this.findWorkItemClaim(workItem, claimId);
+    if (claim.status !== 'supported') {
+      throw new Error(
+        `Only supported claims can be promoted (current status: ${claim.status})`,
+      );
+    }
+    claim.status = 'promoted';
+    workItem.version += 1;
+    workItem.updatedAt = this.now().toISOString();
+    this.mutate(`work_item.claim.promoted ${claim.id}`, {
+      type: 'work_item.claim.promoted',
+      actor: workItem.ownerId,
+      objectRef: workItem.id,
+      payload: { workItemId: workItem.id, claimId: claim.id },
+    });
+    this.persist();
+    return claim;
+  }
+
+  addWorkItemKnowledgeRef(workItemId: string, ref: KnowledgeRef): WorkItem {
+    const workItem = this.requireWorkItem(workItemId);
+    const parsed = KnowledgeRefSchema.parse(ref);
+    workItem.knowledgeRefs.push(parsed);
+    workItem.version += 1;
+    workItem.updatedAt = this.now().toISOString();
+    this.mutate(`work_item.knowledge.added ${parsed.ref}`, {
+      type: 'work_item.knowledge.added',
+      actor: workItem.ownerId,
+      objectRef: workItem.id,
+      payload: { workItemId: workItem.id, ref: parsed.ref, scope: parsed.scope },
+    });
+    this.persist();
+    return workItem;
+  }
+
   archiveProject(projectId: string): Project {
     const project = this.getProject(projectId);
     project.archivedAt = this.now().toISOString();
@@ -251,6 +456,9 @@ export class ProtocolEngine {
 
   createDeliberation(input: CreateDeliberationInput): Deliberation {
     const project = this.getProject(input.projectId);
+    const workItemSnapshot = input.workItemId
+      ? this.buildWorkItemSnapshot(input.workItemId)
+      : undefined;
     const packet: TaskPacket = {
       id: newId('tp'),
       version: 1,
@@ -260,6 +468,7 @@ export class ProtocolEngine {
       rubric: input.rubric,
       sources: project.sourceBindings.map((binding) => binding.id),
       deliverable: input.deliverable,
+      workItemSnapshot,
     };
     this.db.taskPackets.push(packet);
     const deliberation: Deliberation = {
@@ -268,6 +477,7 @@ export class ProtocolEngine {
       protocolVersion: '0.1.0',
       state: 'draft',
       taskPacketId: packet.id,
+      workItemId: input.workItemId,
       ownerId: input.ownerId,
       participants: [],
       runs: [],
@@ -821,6 +1031,24 @@ export class ProtocolEngine {
         rationale: input.rationale,
       },
     });
+    if (deliberation.workItemId) {
+      const workItem = this.db.workItems.find((item) => item.id === deliberation.workItemId);
+      if (workItem) {
+        for (const ref of selectedRefs) {
+          if (!workItem.currentConclusionRefs.includes(ref)) {
+            workItem.currentConclusionRefs.push(ref);
+          }
+        }
+        workItem.version += 1;
+        workItem.updatedAt = this.now().toISOString();
+        this.mutate(`work_item.conclusion.updated ${workItem.id}`, {
+          type: 'work_item.conclusion.updated',
+          actor: input.ownerId,
+          objectRef: workItem.id,
+          payload: { workItemId: workItem.id, deliberationId: deliberation.id, selectedRefs },
+        });
+      }
+    }
     this.persist();
     return decision;
   }
@@ -1069,10 +1297,10 @@ export class ProtocolEngine {
 
   private loadDatabase(store: Store): Database {
     try {
-      return store.load();
+      return migrateDatabase(store.load());
     } catch (error) {
       if (store instanceof JsonFileStore && !existsSync((store as unknown as { filePath: string }).filePath)) {
-        return emptyDatabase();
+        return migrateDatabase(emptyDatabase());
       }
       throw error;
     }
@@ -1178,10 +1406,13 @@ export class ProtocolEngine {
       });
       artifactRefs.push(published.ref);
     }
-    const claims = result.position.claims.map((claim, index) => ({
-      ...claim,
-      id: claim.id ?? `claim_${run.id}_${index + 1}`,
-    }));
+    const usedClaimIds = new Set(deliberation.positions.flatMap((position) => position.claims.map((claim) => claim.id)));
+    const claims = result.position.claims.map((claim, index) => {
+      const preferred = claim.id ?? `claim_${run.id}_${index + 1}`;
+      const id = usedClaimIds.has(preferred) ? `claim_${run.id}_${index + 1}` : preferred;
+      usedClaimIds.add(id);
+      return { ...claim, id };
+    });
     const position: Position = {
       id: newId('pos'),
       runId: run.id,
@@ -1312,6 +1543,8 @@ export class ProtocolEngine {
     deliberation.reviews.push(review);
     run.status = 'committed';
     run.finishedAt = this.now().toISOString();
+    run.fingerprint = result.fingerprint as unknown as Record<string, unknown>;
+    run.cost = result.cost;
     const logRef = `log_${sha256(result.logs ?? '').slice(0, 16)}`;
     this.db.logs[logRef] = result.logs ?? '';
     run.logsRef = logRef;
@@ -1433,6 +1666,38 @@ export class ProtocolEngine {
     return deliberation;
   }
 
+  private requireWorkItem(workItemId: string): WorkItem {
+    const workItem = this.db.workItems.find((item) => item.id === workItemId);
+    if (!workItem) throw new Error(`WorkItem not found: ${workItemId}`);
+    return workItem;
+  }
+
+  private buildWorkItemSnapshot(workItemId: string): NonNullable<TaskPacket['workItemSnapshot']> {
+    const workItem = this.requireWorkItem(workItemId);
+    return {
+      workItemId: workItem.id,
+      title: workItem.title,
+      description: workItem.description,
+      templateFields: workItem.templateFields,
+      version: workItem.version,
+      hash: hashJson({
+        workItemId: workItem.id,
+        title: workItem.title,
+        description: workItem.description ?? null,
+        templateFields: workItem.templateFields,
+        version: workItem.version,
+      }),
+    };
+  }
+
+  private findWorkItemClaim(workItem: WorkItem, claimId: string): WorkItemClaim {
+    const claim = workItem.entries.find(
+      (entry): entry is WorkItemClaim => entry.kind === 'claim' && entry.id === claimId,
+    );
+    if (!claim) throw new Error(`Claim not found: ${claimId}`);
+    return claim;
+  }
+
   private findDeliberationForChallenge(challengeId: string): string {
     const deliberation = this.db.deliberations.find((item) => item.challenges.some((challenge) => challenge.id === challengeId));
     return deliberation?.id ?? '';
@@ -1450,6 +1715,15 @@ export class ProtocolEngine {
 function committedPositions(deliberation: Deliberation): Position[] {
   return deliberation.positions.filter((position) => position.status === 'committed');
 }
+
+const ALLOWED_CLAIM_TRANSITIONS: Record<WorkItemClaim['status'], WorkItemClaim['status'][]> = {
+  tentative: ['supported', 'contested'],
+  supported: ['promoted', 'superseded'],
+  contested: ['refuted'],
+  promoted: ['superseded'],
+  refuted: [],
+  superseded: [],
+};
 
 function deliberationForRun(engine: ProtocolEngine, run: AgentRun): Deliberation {
   const found = engine.deliberationDatabase.deliberations.find((d) => d.runs.some((r) => r.id === run.id));

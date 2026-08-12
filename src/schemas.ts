@@ -42,6 +42,16 @@ export const TaskPacketSchema = z.object({
   sources: z.array(z.string()).min(1),
   deliverable: z.string().optional(),
   frozenAt: z.string().optional(),
+  workItemSnapshot: z
+    .object({
+      workItemId: z.string().min(1),
+      title: z.string().min(1),
+      description: z.string().optional(),
+      templateFields: z.record(z.unknown()).default({}),
+      version: z.number().int().positive(),
+      hash: z.string().min(1),
+    })
+    .optional(),
 });
 export type TaskPacket = z.infer<typeof TaskPacketSchema>;
 
@@ -277,6 +287,116 @@ export const DecisionSchema = z.object({
 });
 export type Decision = z.infer<typeof DecisionSchema>;
 
+export const WorkItemKindSchema = z.enum([
+  'problem',
+  'requirement',
+  'bug',
+  'hypothesis',
+  'decision',
+]);
+export type WorkItemKind = z.infer<typeof WorkItemKindSchema>;
+
+export const WorkItemStatusSchema = z.enum([
+  'open',
+  'investigating',
+  'resolved',
+  'rejected',
+  'needs_evidence',
+]);
+export type WorkItemStatus = z.infer<typeof WorkItemStatusSchema>;
+
+export const WorkItemClaimStatusSchema = z.enum([
+  'tentative',
+  'supported',
+  'contested',
+  'refuted',
+  'promoted',
+  'superseded',
+]);
+export type WorkItemClaimStatus = z.infer<typeof WorkItemClaimStatusSchema>;
+
+export const KnowledgeRefSchema = z.object({
+  ref: z.string().min(1),
+  scope: z.enum(['workspace', 'module', 'work_item']),
+  sourceVersion: z.string().optional(),
+  status: z.enum(['verified', 'disputed', 'superseded', 'expired']),
+  appliesWhen: z.string().optional(),
+  notApplicableWhen: z.string().optional(),
+  verifiedAt: z.string().optional(),
+  expiresAt: z.string().optional(),
+  provenance: z
+    .object({
+      workItemId: z.string().min(1),
+      researchRoundId: z.string().optional(),
+    })
+    .optional(),
+});
+export type KnowledgeRef = z.infer<typeof KnowledgeRefSchema>;
+
+export const WorkItemRelationSchema = z.object({
+  relation: z.enum(['related_to', 'depends_on', 'supersedes']),
+  targetRef: z.string().min(1),
+});
+export type WorkItemRelation = z.infer<typeof WorkItemRelationSchema>;
+
+export const WorkItemClaimSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal('claim'),
+  statement: z.string().min(1),
+  status: WorkItemClaimStatusSchema,
+  evidenceRefs: z.array(z.string()).default([]),
+  author: z.string().min(1),
+  createdAt: z.string(),
+});
+export type WorkItemClaim = z.infer<typeof WorkItemClaimSchema>;
+
+export const WorkItemQuestionSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal('question'),
+  text: z.string().min(1),
+  assignee: z.enum(['human', 'agent']),
+  author: z.string().min(1),
+  answer: z.string().optional(),
+  createdAt: z.string(),
+});
+export type WorkItemQuestion = z.infer<typeof WorkItemQuestionSchema>;
+
+export const WorkItemUpdateSchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal('update'),
+  text: z.string().min(1),
+  author: z.string().min(1),
+  createdAt: z.string(),
+});
+export type WorkItemUpdate = z.infer<typeof WorkItemUpdateSchema>;
+
+export const WorkItemEntrySchema = z.discriminatedUnion('kind', [
+  WorkItemClaimSchema,
+  WorkItemQuestionSchema,
+  WorkItemUpdateSchema,
+]);
+export type WorkItemEntry = z.infer<typeof WorkItemEntrySchema>;
+
+export const WorkItemSchema = z.object({
+  id: z.string().min(1),
+  workspaceId: z.string().min(1),
+  kind: WorkItemKindSchema,
+  title: z.string().min(1),
+  description: z.string().optional(),
+  ownerId: z.string().min(1),
+  status: WorkItemStatusSchema,
+  templateFields: z.record(z.unknown()).default({}),
+  currentConclusionRefs: z.array(z.string()).default([]),
+  knowledgeRefs: z.array(KnowledgeRefSchema).default([]),
+  relations: z.array(WorkItemRelationSchema).default([]),
+  entries: z.array(WorkItemEntrySchema).default([]),
+  version: z.number().int().positive(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  resolvedAt: z.string().optional(),
+});
+export type WorkItem = z.infer<typeof WorkItemSchema>;
+
 export const DeliberationStateSchema = z.enum([
   'draft',
   'frozen',
@@ -297,6 +417,7 @@ export const DeliberationSchema = z.object({
   protocolVersion: z.string().default('0.1.0'),
   state: DeliberationStateSchema,
   taskPacketId: z.string().optional(),
+  workItemId: z.string().optional(),
   ownerId: z.string().min(1),
   participants: z.array(ParticipantSchema).default([]),
   runs: z.array(AgentRunSchema).default([]),
@@ -350,6 +471,7 @@ export type Event = z.infer<typeof EventSchema>;
 export const DatabaseSchema = z.object({
   schemaVersion: z.string().default('0.1.0'),
   projects: z.array(ProjectSchema).default([]),
+  workItems: z.array(WorkItemSchema).default([]),
   deliberations: z.array(DeliberationSchema).default([]),
   taskPackets: z.array(TaskPacketSchema).default([]),
   contextViews: z.array(ContextViewSchema).default([]),
@@ -360,6 +482,40 @@ export const DatabaseSchema = z.object({
   logs: z.record(z.string()).default({}),
 });
 export type Database = z.infer<typeof DatabaseSchema>;
+
+/**
+ * One-to-one legacy migration (plan Task 0.2): every existing Deliberation
+ * becomes one WorkItem (`kind: 'decision'`) plus one linked historical
+ * ResearchRound. Idempotent: runs only when no workItems exist yet.
+ */
+export function migrateDatabase(db: Database): Database {
+  if (db.workItems.length > 0 || db.deliberations.length === 0) return db;
+  const workItems: WorkItem[] = [];
+  const deliberations = db.deliberations.map((deliberation) => {
+    const packet = db.taskPackets.find((item) => item.id === deliberation.taskPacketId);
+    const decision = deliberation.decisions[deliberation.decisions.length - 1];
+    const workItem: WorkItem = {
+      id: `wi_${deliberation.id}`,
+      workspaceId: deliberation.projectId,
+      kind: 'decision',
+      title: packet?.problem ?? 'Untitled work item',
+      description: packet?.deliverable,
+      ownerId: deliberation.ownerId,
+      status: deliberation.state === 'decided' ? 'resolved' : 'open',
+      currentConclusionRefs: decision ? [...decision.selectedRefs] : [],
+      templateFields: {},
+      knowledgeRefs: [],
+      relations: [],
+      entries: [],
+      version: 1,
+      createdAt: deliberation.createdAt,
+      updatedAt: deliberation.updatedAt,
+    };
+    workItems.push(workItem);
+    return { ...deliberation, workItemId: workItem.id };
+  });
+  return { ...db, workItems, deliberations };
+}
 
 export const AgentFingerprintSchema = z.object({
   adapter: z.string().min(1),
@@ -375,6 +531,7 @@ export function emptyDatabase(): Database {
   return {
     schemaVersion: '0.1.0',
     projects: [],
+    workItems: [],
     deliberations: [],
     taskPackets: [],
     contextViews: [],
