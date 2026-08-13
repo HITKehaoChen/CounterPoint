@@ -8,6 +8,7 @@ import { MockReviewerAdapter } from '../../src/adapters/mock-reviewer.ts';
 import { CounterpointDeliberationOperator } from '../../src/operators/counterpoint-deliberation.ts';
 import { HumanGateOperator } from '../../src/operators/human-gate.ts';
 import { createOperatorRegistry } from '../../src/operators/operator.ts';
+import type { AgentAdapter, AgentRunInput, AgentRunResult } from '../../src/adapters/agent.ts';
 import { ProtocolEngine } from '../../src/protocol-engine.ts';
 import { InMemoryStore } from '../../src/store.ts';
 import type { HumanGateRequest } from '../../src/autonomy/human-gate.ts';
@@ -306,4 +307,57 @@ test('deliberation facade without a human gate does not fabricate a decision', a
   assert.equal(result.outputs.pendingDecision, true);
   assert.equal(db.deliberations[0].state, 'reviewing');
   assert.equal(db.deliberations[0].decisions.length, 0);
+});
+
+test('agent task executes the planner instructions as the problem', async () => {
+  class RecordingAdapter implements AgentAdapter {
+    readonly name = 'recording';
+    last: AgentRunInput | undefined;
+    private readonly inner = new MockAgentAdapter(defaultWorkerAScript);
+    async run(input: AgentRunInput): Promise<AgentRunResult> {
+      this.last = input;
+      return this.inner.run(input);
+    }
+  }
+  const adapter = new RecordingAdapter();
+  const ctx = makeCtx({
+    graphNode: {
+      ...graphNode(),
+      objective: 'analyze sync retries',
+      operator: { type: 'agent_task', instructions: 'these instructions' },
+      contextPolicy: { visibility: 'shared', readScopes: [], writeScopes: [], includeObjectTypes: [], excludeObjectTypes: [] },
+    },
+    resolveAgent: () => adapter,
+  });
+  const result = await new AgentTaskOperator().run(ctx);
+  assert.equal(result.status, 'succeeded');
+  assert.equal(adapter.last?.taskPacket.problem, 'these instructions');
+  assert.equal(adapter.last?.taskPacket.goals[0], 'analyze sync retries');
+  assert.equal(adapter.last?.isolationMode, 'shared');
+});
+
+test('verification evidence hash binds the execution result', async () => {
+  const runVerification = async (args: string[]) => {
+    const batches: OperatorWriteBatch[] = [];
+    const ctx = makeCtx(
+      {
+        graphNode: { ...graphNode(), operator: { type: 'verification', command: 'node', args, cwd: process.cwd(), targetRefs: ['claim:c1'] } },
+      },
+      (batch) => {
+        batches.push(batch);
+        return [];
+      },
+    );
+    const result = await new VerificationOperator().run(ctx);
+    return { result, evidence: batches[0]?.evidence?.[0] };
+  };
+  const ok = await runVerification(['--version']);
+  const failed = await runVerification(['-e', 'process.exit(2)']);
+  assert.equal(ok.result.status, 'succeeded');
+  assert.equal(failed.result.status, 'failed');
+  assert.equal(ok.evidence?.status, 'verified');
+  assert.equal(failed.evidence?.status, 'failed');
+  assert.notEqual(ok.evidence?.hash, failed.evidence?.hash);
+  assert.equal(ok.evidence?.result.exitCode, 0);
+  assert.equal(failed.evidence?.result.exitCode, -1);
 });
