@@ -1,5 +1,7 @@
 import type { PlannerInput } from './planner.ts';
 
+export const PLANNER_PROMPT_VERSION = 'counterpoint-planner-prompt-2';
+
 export function renderPlannerPrompt(input: PlannerInput): string {
   const lines: string[] = [];
   lines.push('You are a collaboration planner. Design a structured, executable plan for the work item below.');

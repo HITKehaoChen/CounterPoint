@@ -3,6 +3,8 @@ import type { AutonomyEnvelope } from '../autonomy/autonomy-envelope.ts';
 import type { CapabilityCatalog } from './capabilities.ts';
 import type { WorkItem } from '../schemas.ts';
 
+export const VALIDATOR_VERSION = '2';
+
 export type IssueKind = 'schema' | 'dag' | 'permission' | 'budget' | 'context' | 'independence' | 'evidence' | 'gate';
 export interface ValidationIssue {
   code: string;

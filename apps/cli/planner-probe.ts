@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -6,7 +7,17 @@ import { catalogFromEntries } from '../../src/planning/capabilities.ts';
 import { validatePlan } from '../../src/planning/plan-validator.ts';
 import { PlannerOrchestrator, type PlannerInput } from '../../src/planning/planner.ts';
 import { CliPlannerAdapter } from '../../src/planning/cli-planner.ts';
+import { PLANNER_PROMPT_VERSION } from '../../src/planning/planner-prompt.ts';
+import { VALIDATOR_VERSION } from '../../src/planning/plan-validator.ts';
+import { SCHEMA_VERSION } from '../../src/schemas.ts';
 import { PROBE_FIXTURES, topologySignature } from './planner-fixtures.ts';
+
+export const HELP_TEXT = [
+  'Usage: node apps/cli/planner-probe.ts [--strict] [--fresh] [--help]',
+  '  --strict  exit 1 unless acceptance and semantic topology assertions pass',
+  '  --fresh   never reuse accepted results from prior reports',
+  '  --help    print this help and exit',
+].join('\n');
 
 const chrysBin = process.env.CHRYS_BIN ?? 'C:\\Users\\tgyzc\\project\\chrys\\.venv\\Scripts\\chrys.exe';
 const claudeBin = process.env.CLAUDE_BIN ?? 'C:\\Users\\tgyzc\\.local\\bin\\claude.exe';
@@ -42,9 +53,11 @@ interface FixtureResult {
   model?: string;
   error?: string;
   resumed?: boolean;
+  originalRunId?: string;
 }
 
-function loadResumedResults(): FixtureResult[] {
+function loadResumedResults(options: { fresh: boolean }): FixtureResult[] {
+  if (options.fresh) return [];
   const dir = join(process.cwd(), 'data', 'probe');
   if (!existsSync(dir)) return [];
   const files = readdirSync(dir)
@@ -57,7 +70,7 @@ function loadResumedResults(): FixtureResult[] {
       if (!Array.isArray(report.results) || report.results.length === 0) continue;
       return report.results
         .filter((row) => row.verdict === 'accepted')
-        .map((row) => ({ ...row, resumed: true }));
+        .map((row) => ({ ...row, resumed: true, originalRunId: row.originalRunId ?? file }));
     } catch {
       continue;
     }
@@ -66,6 +79,11 @@ function loadResumedResults(): FixtureResult[] {
 }
 
 async function main(): Promise<void> {
+  if (process.argv.includes('--help')) {
+    console.log(HELP_TEXT);
+    return;
+  }
+  const fresh = process.argv.includes('--fresh');
   const probeStartedAt = Date.now();
   mkdirSync(workspaceRoot, { recursive: true });
   const planners: PlannerEntry[] = [
@@ -99,7 +117,7 @@ async function main(): Promise<void> {
     },
   ];
 
-  const results: FixtureResult[] = loadResumedResults();
+  const results: FixtureResult[] = loadResumedResults({ fresh });
   let spentUsd = 0;
   let budgetExceeded = false;
   let timeBudgetExceeded = false;
@@ -198,6 +216,10 @@ async function main(): Promise<void> {
   const report = {
     formatVersion: 'planner-probe/0.1.0',
     generatedAt: new Date().toISOString(),
+    gitCommitSha: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+    schemaVersion: SCHEMA_VERSION,
+    validatorVersion: VALIDATOR_VERSION,
+    promptVersion: PLANNER_PROMPT_VERSION,
     budgetUsd,
     timeBudgetMs,
     spentUsd: Number(spentUsd.toFixed(6)),

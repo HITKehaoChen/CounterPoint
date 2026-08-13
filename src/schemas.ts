@@ -4,6 +4,8 @@ import { HumanGateRequestSchema } from './autonomy/human-gate.ts';
 import { CollaborationPlanSchema } from './planning/schemas.ts';
 import { PlanPatchSchema } from './planning/plan-patch.ts';
 
+export const SCHEMA_VERSION = '0.2.0';
+
 // ---------------------------------------------------------------------------
 // Counterpoint Protocol Schemas (PRD v0.1, section 12)
 // Deterministic data contracts shared by the Protocol Engine, Context Policy,

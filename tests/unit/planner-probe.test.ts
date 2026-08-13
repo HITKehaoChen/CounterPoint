@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { HELP_TEXT } from '../../apps/cli/planner-probe.ts';
 import { PROBE_FIXTURES, topologySignature } from '../../apps/cli/planner-fixtures.ts';
 import { validPlan } from '../helpers/plan-fixtures.ts';
 
@@ -28,4 +29,9 @@ test('topology signature differs when node structure differs', () => {
     ],
   });
   assert.notEqual(topologySignature(simple), topologySignature(complex));
+});
+
+test('probe help lists --fresh and --strict flags', () => {
+  assert.ok(HELP_TEXT.includes('--fresh'));
+  assert.ok(HELP_TEXT.includes('--strict'));
 });
