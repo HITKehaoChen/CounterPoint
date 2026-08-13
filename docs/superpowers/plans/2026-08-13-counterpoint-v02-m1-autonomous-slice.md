@@ -742,6 +742,32 @@ test('human gate operator pauses and resumes', async () => {
 
 ---
 
+## Task 8.5.1：Execution Boundary Closure（评审补充，完全离线）
+
+1. Deliberation Source 裁剪：`ProtocolEngine.createDeliberation` 增 `sourceIds?`，
+   facade 只传 `ctx.contextView.visible.authoritySources` 解析出的 id，禁止整个
+   Workspace 的 Source 进入 TaskPacket。
+2. 真实 `verificationPolicy`：把 schema 中的字符串改为结构化
+   `{ commands: Array<{ command, args, cwd?, targetKinds }> }`；Validator 对
+   `challengeRounds > 0` 与非 `anonymous-rubric` 的 `reviewerPolicy` 返回
+   `needs_revision`（M1 不支持，拒绝而非静默忽略）；Facade 逐条执行 VerificationOperator，
+   并把原始 Evidence 的 status/hash/summary/targetRefs 镜像进 Deliberation
+   （`ProtocolEngine.addEvidence` 增可选 `hash` 透传）。
+3. 缺失 `effectClass` 保守处理：Validator 对 tool_task/verification 缺失
+   `effectClass` 返回 `EFFECT_CLASS_REQUIRED`；运行时绝不缺省为 `read_only`。
+4. Reviewer 完整目标集合：按 `targetNodeIds` 的**每个 Run** 构造候选（含无 Claim 仅
+   Artifact 的 Run），第三个候选 ID 为 `C`；独立性判定先 conflict 再 unknown 再 ok。
+5. Artifact 自身 visibility：Context 裁剪同时检查 Artifact 的 `private/shared/review`
+   （Node Policy 与 Artifact Policy 取更严格者）；`ArtifactRegistry.publish` 禁止同一
+   logicalName 从 private/review 放宽为 shared（`VISIBILITY_WIDENING_FORBIDDEN`）。
+6. Ledger `>=`：`canReserve` 达到时间/成本/Token 预算即拒绝（与 `envelopeExhausted`
+   一致）。
+7. 固化 producer-ref 规范：`normalizeOutputRefs(result)` 返回
+   ``[...artifactRefs, ...claimRefs.map(id => `claim:${id}`), ...evidenceRefs.map(id => `evidence:${id}`)]``，
+   并为 Claim、Evidence 各加一条跨节点传播测试。
+
+---
+
 ## Task 9：Scheduler
 
 **Files:** Create `src/execution/scheduler.ts`；Test `tests/unit/scheduler.test.ts`
