@@ -11,6 +11,7 @@ import type { CapabilityCatalog } from '../planning/capabilities.ts';
 import { buildNodeContextView, materializeNodeContext } from './context-view.ts';
 import { compilePlan } from './graph-compiler.ts';
 import { computeReadyNodes, type ExecutionGraph, type GraphNode } from './execution-graph.ts';
+import type { GraphNodeStatus } from './execution-graph.ts';
 import { BudgetLedger } from './budget-ledger.ts';
 import type { NewEvent } from '../events.ts';
 import { hashJson } from '../hashing.ts';
@@ -61,7 +62,8 @@ export class Scheduler {
     this.plan = plan;
     this.workItem = workItem;
     for (const node of graph.nodes) {
-      this.ensureNodeRun(node);
+      const run = this.ensureNodeRun(node);
+      if (run.status !== 'pending' && run.status !== 'timed_out') node.status = run.status as GraphNodeStatus;
     }
   }
 
@@ -173,7 +175,7 @@ export class Scheduler {
         };
         this.options.db.humanGateRequests.push(gate);
       } else {
-        run.status = 'failed';
+        run.status = 'ready';
         run.error = 'interrupted; recovered after restart';
       }
     }
@@ -225,6 +227,7 @@ export class Scheduler {
       attempt += 1;
       run.attempt = attempt;
       run.status = 'running';
+      node.status = 'running';
       run.error = undefined;
       run.startedAt = new Date().toISOString();
       const started = Date.now();

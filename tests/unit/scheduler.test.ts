@@ -161,7 +161,7 @@ test('interrupted non-idempotent run waits for a human, read-only fails safely',
   });
   assert.equal(db.nodeRuns[0].status, 'waiting_human');
   assert.equal(db.humanGateRequests.length, 1);
-  assert.equal(db.nodeRuns[1].status, 'failed');
+  assert.equal(db.nodeRuns[1].status, 'ready');
   assert.match(db.nodeRuns[1].error ?? '', /interrupted/);
 });
 

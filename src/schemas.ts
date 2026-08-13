@@ -309,6 +309,7 @@ export type Decision = z.infer<typeof DecisionSchema>;
 
 export const NodeRunStatusSchema = z.enum([
   'pending',
+  'ready',
   'running',
   'waiting_human',
   'succeeded',
