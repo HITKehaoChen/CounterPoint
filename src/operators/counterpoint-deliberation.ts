@@ -2,6 +2,7 @@ import type { HumanGateAction, HumanGateRequest } from '../autonomy/human-gate.t
 import type { ProtocolEngine } from '../protocol-engine.ts';
 import type { Decision, Deliberation } from '../schemas.ts';
 import type { Operator, OperatorContext, OperatorResult } from './operator.ts';
+import { VerificationOperator } from './verification.ts';
 
 export class CounterpointDeliberationOperator implements Operator {
   readonly type = 'counterpoint_deliberation' as const;
@@ -47,13 +48,35 @@ export class CounterpointDeliberationOperator implements Operator {
     const claimRefs = this.engine.getState(deliberation.id).positions.flatMap((position) =>
       position.claims.map((claim) => `claim:${claim.id}`),
     );
-    await this.engine.runVerification({
+    const verification = await new VerificationOperator().run({
+      ...ctx,
+      graphNode: {
+        ...ctx.graphNode,
+        operator: {
+          type: 'verification',
+          command: 'node',
+          args: ['--version'],
+          cwd: process.cwd(),
+          targetRefs: claimRefs,
+        },
+      },
+    });
+    if (verification.status === 'failed') {
+      return {
+        status: 'failed',
+        artifactRefs: [],
+        evidenceRefs: [],
+        claimRefs: [],
+        opinionRefs: [],
+        outputs: { deliberationId: deliberation.id, error: verification.error },
+        usage: { timeMs: Date.now() - started },
+      };
+    }
+    this.engine.addEvidence({
       deliberationId: deliberation.id,
-      command: 'node',
-      args: ['--version'],
-      cwd: process.cwd(),
       targetRefs: claimRefs,
-      description: 'facade verification command',
+      status: 'verified',
+      resultSummary: 'node verification passed',
     });
     this.engine.freezeEvidencePack(deliberation.id);
     await this.engine.runReview(deliberation.id);
@@ -81,14 +104,25 @@ export class CounterpointDeliberationOperator implements Operator {
         usage: { timeMs: Date.now() - started },
       };
     }
-    const decision = this.decide(deliberation.id, ctx.workItem.ownerId);
+    const review = this.engine.getState(deliberation.id).reviews[this.engine.getState(deliberation.id).reviews.length - 1];
     return {
       status: 'succeeded',
       artifactRefs: [],
       evidenceRefs: [],
       claimRefs: [],
       opinionRefs: [],
-      outputs: { deliberationId: deliberation.id, decisionRefs: [decision.id] },
+      outputs: {
+        deliberationId: deliberation.id,
+        pendingDecision: true,
+        review: review
+          ? {
+              recommendation: review.recommendation,
+              rationale: review.rationale,
+              evidenceSufficiency: review.evidenceSufficiency,
+              unresolvedRisks: review.unresolvedRisks,
+            }
+          : undefined,
+      },
       usage: { timeMs: Date.now() - started },
     };
   }

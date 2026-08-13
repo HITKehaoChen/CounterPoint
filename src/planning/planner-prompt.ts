@@ -31,6 +31,8 @@ export function renderPlannerPrompt(input: PlannerInput): string {
   lines.push('- agent_task { type, instructions }');
   lines.push('- tool_task { type, command, args }');
   lines.push('- verification { type, command, args, targetRefs }');
+  lines.push('tool_task and verification may carry effectClass: read_only | idempotent | non_idempotent (default read_only).');
+  lines.push('Any non_idempotent command requires at least one human_gate node in the plan.');
   lines.push('- independent_review { type, rubricRef, targetNodeIds }');
   lines.push('- counterpoint_deliberation { type, workerCount, blind, commitReveal, challengeRounds, verificationPolicy, reviewerPolicy }');
   lines.push('- human_gate { type, summary }');

@@ -206,3 +206,35 @@ test('sink independent review node is a valid decision producer', () => {
   assert.equal(result.verdict, 'accepted');
   assert.equal(result.issues.some((issue) => issue.code === 'SINK_WITHOUT_OUTPUT'), false);
 });
+
+test('non-idempotent command requires a human gate node', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({
+        operator: { type: 'tool_task', command: 'git', args: ['push'], effectClass: 'non_idempotent' },
+        capabilityRequirements: ['verification'],
+      }),
+    ],
+  });
+  const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
+  assert.equal(result.verdict, 'needs_revision');
+  assert.ok(result.issues.some((issue) => issue.code === 'GATE_REQUIRED_FOR_NON_IDEMPOTENT'));
+});
+
+test('non-idempotent command with a gate node is accepted', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({
+        operator: { type: 'tool_task', command: 'git', args: ['push'], effectClass: 'non_idempotent' },
+        capabilityRequirements: ['verification'],
+      }),
+      makeNode({
+        id: 'gate',
+        dependsOn: ['repro'],
+        operator: { type: 'human_gate', summary: 'approve push', options: ['approve_once', 'reject_and_stop'] },
+      }),
+    ],
+  });
+  const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
+  assert.equal(result.verdict, 'accepted');
+});

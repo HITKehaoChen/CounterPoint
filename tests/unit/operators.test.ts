@@ -7,6 +7,7 @@ import { IndependentReviewOperator } from '../../src/operators/independent-revie
 import { MockReviewerAdapter } from '../../src/adapters/mock-reviewer.ts';
 import { CounterpointDeliberationOperator } from '../../src/operators/counterpoint-deliberation.ts';
 import { HumanGateOperator } from '../../src/operators/human-gate.ts';
+import { createOperatorRegistry } from '../../src/operators/operator.ts';
 import { ProtocolEngine } from '../../src/protocol-engine.ts';
 import { InMemoryStore } from '../../src/store.ts';
 import type { HumanGateRequest } from '../../src/autonomy/human-gate.ts';
@@ -205,4 +206,104 @@ test('human gate operator pauses and resumes', async () => {
   assert.equal(requests.length, 1);
   assert.equal((await op.resume(ctx, requests[0], 'approve_once')).status, 'succeeded');
   assert.equal((await op.resume(ctx, requests[0], 'reject_and_stop')).status, 'failed');
+});
+
+test('verification without target refs fails without committing evidence', async () => {
+  const batches: OperatorWriteBatch[] = [];
+  const ctx = makeCtx(
+    {
+      graphNode: { ...graphNode(), operator: { type: 'verification', command: 'node', args: ['--version'], targetRefs: [] } },
+    },
+    (batch) => {
+      batches.push(batch);
+      return [];
+    },
+  );
+  const result = await new VerificationOperator().run(ctx);
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error, 'VERIFICATION_TARGETS_REQUIRED');
+  assert.equal(batches.length, 0);
+});
+
+test('independent review groups candidates by producer run', async () => {
+  const db = emptyDatabase();
+  for (const runId of ['nr_a', 'nr_b']) {
+    db.nodeRuns.push(
+      NodeRunSchema.parse({ id: runId, workItemId: 'wi_test', planId: 'plan_test', planVersion: 1, graphNodeId: runId === 'nr_a' ? 'gn_a' : 'gn_b', role: 'src', operatorType: 'agent_task', status: 'succeeded' }),
+    );
+    db.claims.push(
+      { id: `${runId}-1`, workItemId: 'wi_test', nodeRunId: runId, statement: 's1', type: 'fact', evidenceRefs: [] },
+      { id: `${runId}-2`, workItemId: 'wi_test', nodeRunId: runId, statement: 's2', type: 'fact', evidenceRefs: [] },
+    );
+  }
+  const ctx = makeCtx({
+    graphNode: { ...graphNode(), operator: { type: 'independent_review', rubricRef: 'rubric:1', targetNodeIds: ['a', 'b'] } },
+    resolveReviewer: () => new MockReviewerAdapter({ recommendation: 'merge', evidenceSufficiency: 'partial' }),
+    readDb: () => db,
+  });
+  const result = await new IndependentReviewOperator().run(ctx);
+  assert.equal((result.outputs as { review: { candidateCount: number } }).review.candidateCount, 2);
+});
+
+test('registry without an engine exposes an unavailable deliberation operator', async () => {
+  const registry = createOperatorRegistry();
+  const op = registry.get('counterpoint_deliberation')!;
+  await assert.rejects(() => op.run(makeCtx()), /OPERATOR_UNAVAILABLE/);
+});
+
+test('deliberation facade without a human gate does not fabricate a decision', async () => {
+  const store = new InMemoryStore();
+  const engine = new ProtocolEngine({
+    store,
+    seed: 'facade-no-gate',
+    workspaceRoot: 'C:/tmp/facade-no-gate',
+    resolveAdapter: (participant) =>
+      participant.role === 'worker'
+        ? new MockAgentAdapter(defaultWorkerAScript)
+        : participant.role === 'reviewer'
+          ? new MockReviewerAdapter({ recommendation: 'candidate_a', evidenceSufficiency: 'partial' })
+          : undefined,
+  });
+  const project = engine.createProject({ name: 'Facade' });
+  const workItem = engine.createWorkItem({ workspaceId: project.id, kind: 'decision', title: 'transport choice' });
+  const db = engine.deliberationDatabase;
+  const op = new CounterpointDeliberationOperator(engine);
+  const ctx: OperatorContext = {
+    graphNode: {
+      id: 'gn_delib',
+      planNodeId: 'delib',
+      role: 'Deliberation',
+      objective: 'choose transport',
+      dependsOn: [],
+      inputRefs: [],
+      contextPolicy: { visibility: 'blind', readScopes: [], writeScopes: [], includeObjectTypes: [], excludeObjectTypes: [] },
+      operator: { type: 'counterpoint_deliberation', workerCount: 2, blind: true, commitReveal: true, challengeRounds: 0, verificationPolicy: 'version', reviewerPolicy: 'mock' },
+      capabilityRequirements: [],
+      completionCriteria: [],
+      failurePolicy: { maxRetries: 0, onFailure: 'escalate' },
+      allocatedBudget: { maxTimeMs: 30_000 },
+      effectClass: 'read_only',
+      status: 'running',
+    },
+    nodeRun: NodeRunSchema.parse({ id: 'nr_delib2', workItemId: workItem.id, planId: 'plan_2', planVersion: 1, graphNodeId: 'gn_delib', role: 'Deliberation', operatorType: 'counterpoint_deliberation', status: 'running' }),
+    workItem,
+    contextView: { id: 'c', runId: 'nr_delib2', phase: 'node', visible: { authoritySources: [], artifacts: [], claims: [], evidence: [] }, hidden: { agentRuns: [], objectTypes: [] }, tools: { allow: [], deny: [] }, hash: 'h' },
+    workspacePath: 'C:/tmp/facade-no-gate',
+    envelope: defaultAutonomyEnvelope(project.id),
+    resolveAgent: () => new MockAgentAdapter(defaultWorkerAScript),
+    resolveReviewer: () => new MockReviewerAdapter({}),
+    commit: () => [],
+    ledger: new BudgetLedger(defaultAutonomyEnvelope(project.id)),
+    emit: () => undefined,
+    requestHumanGate: () => {
+      throw new Error('no gate expected');
+    },
+    readDb: () => db,
+    materialize: () => ({ authoritySources: [], visibleArtifacts: [] }),
+  };
+  const result = await op.run(ctx);
+  assert.equal(result.status, 'succeeded');
+  assert.equal(result.outputs.pendingDecision, true);
+  assert.equal(db.deliberations[0].state, 'reviewing');
+  assert.equal(db.deliberations[0].decisions.length, 0);
 });

@@ -9,6 +9,7 @@ export interface BudgetUsage {
 
 export interface LedgerSnapshot {
   reservations: Record<string, { reservedTimeMs: number; maxTimeMs: number }>;
+  attemptCounts: Record<string, number>;
   totalSettledTimeMs: number;
   totalSettledCostUsd: number;
   totalSettledTokens: number;
@@ -33,6 +34,9 @@ export class BudgetLedger {
     if (snapshot) {
       for (const [runId, reservation] of Object.entries(snapshot.reservations)) {
         this.reservations.set(runId, { ...reservation });
+      }
+      for (const [runId, count] of Object.entries(snapshot.attemptCounts ?? {})) {
+        this.attemptCounts.set(runId, count);
       }
       this.totalSettledTimeMs = snapshot.totalSettledTimeMs;
       this.totalSettledCostUsd = snapshot.totalSettledCostUsd;
@@ -60,6 +64,7 @@ export class BudgetLedger {
   }
 
   reserve(runId: string, nodeBudget: NodeBudget): void {
+    if (this.reservations.has(runId)) throw new Error(`DUPLICATE_RESERVATION for ${runId}`);
     if (!this.canReserve(nodeBudget)) throw new Error('BUDGET_EXCEEDED');
     this.reservations.set(runId, { reservedTimeMs: nodeBudget.maxTimeMs, maxTimeMs: nodeBudget.maxTimeMs });
     this.attemptCounts.set(runId, (this.attemptCounts.get(runId) ?? 0) + 1);
@@ -71,15 +76,14 @@ export class BudgetLedger {
     if (usage.timeMs > reservation.maxTimeMs) {
       throw new Error(`NODE_BUDGET_EXCEEDED: ${usage.timeMs}ms > ${reservation.maxTimeMs}ms`);
     }
-    this.totalSettledTimeMs += usage.timeMs;
-    this.totalSettledCostUsd += usage.costUsd ?? 0;
-    this.totalSettledTokens += usage.tokens ?? 0;
-    if (this.envelope.costBudget !== undefined && this.totalSettledCostUsd > this.envelope.costBudget) {
-      throw new Error('BUDGET_EXCEEDED');
-    }
-    if (this.envelope.tokenBudget !== undefined && this.totalSettledTokens > this.envelope.tokenBudget) {
-      throw new Error('BUDGET_EXCEEDED');
-    }
+    const nextTime = this.totalSettledTimeMs + usage.timeMs;
+    const nextCost = this.totalSettledCostUsd + (usage.costUsd ?? 0);
+    const nextTokens = this.totalSettledTokens + (usage.tokens ?? 0);
+    if (this.envelope.costBudget !== undefined && nextCost > this.envelope.costBudget) throw new Error('BUDGET_EXCEEDED');
+    if (this.envelope.tokenBudget !== undefined && nextTokens > this.envelope.tokenBudget) throw new Error('BUDGET_EXCEEDED');
+    this.totalSettledTimeMs = nextTime;
+    this.totalSettledCostUsd = nextCost;
+    this.totalSettledTokens = nextTokens;
     this.reservations.delete(runId);
   }
 
@@ -104,6 +108,7 @@ export class BudgetLedger {
     for (const [runId, reservation] of this.reservations) reservations[runId] = { ...reservation };
     return {
       reservations,
+      attemptCounts: Object.fromEntries(this.attemptCounts),
       totalSettledTimeMs: this.totalSettledTimeMs,
       totalSettledCostUsd: this.totalSettledCostUsd,
       totalSettledTokens: this.totalSettledTokens,

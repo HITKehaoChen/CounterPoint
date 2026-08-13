@@ -135,6 +135,25 @@ test('parse-error attempts keep their cost in attemptsDetail', async () => {
   assert.ok(Math.abs(proposal.totalCostUsd - 0.3) < 1e-9);
 });
 
+test('runtime errors carry attemptsDetail on the thrown error', async () => {
+  const planner: Planner = {
+    name: 'boom-planner',
+    async plan(): Promise<PlannerResult> {
+      throw new Error('boom');
+    },
+  };
+  const orchestrator = new PlannerOrchestrator({ planner, validator: validatePlan });
+  await assert.rejects(
+    () => orchestrator.propose(baseInput()),
+    (error: unknown) => {
+      assert.deepEqual((error as { attemptsDetail?: unknown[] }).attemptsDetail, [
+        { attempt: 1, costUsd: 0, outcome: 'runtime_error' },
+      ]);
+      return true;
+    },
+  );
+});
+
 function badNode() {
   return makeNode({
     completionCriteria: [{ id: 'c1', kind: 'evidence', description: 'needs evidence', refs: [] }],

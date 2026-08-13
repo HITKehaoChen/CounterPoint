@@ -14,21 +14,38 @@ export class VerificationOperator implements Operator {
       throw new Error(`Command "${spec.command}" is not in the envelope allowlist: ${ctx.envelope.allowedTools.join(', ')}`);
     }
     const started = Date.now();
+    if (spec.targetRefs.length === 0) {
+      return {
+        status: 'failed',
+        artifactRefs: [],
+        evidenceRefs: [],
+        claimRefs: [],
+        opinionRefs: [],
+        outputs: {},
+        usage: { timeMs: Date.now() - started },
+        error: 'VERIFICATION_TARGETS_REQUIRED',
+      };
+    }
     let status: Evidence['status'] = 'verified';
     let summary = '';
     let exitCode = 0;
+    let stdoutHash = '';
+    let stderrHash = '';
     try {
-      const { stdout } = await runCliProcess({
+      const { stdout, stderr } = await runCliProcess({
         command: spec.command,
         args: spec.args,
         cwd: spec.cwd ?? ctx.workspacePath,
         timeoutMs: ctx.graphNode.allocatedBudget.maxTimeMs,
       });
       summary = `exit 0 in ${Date.now() - started}ms; stdout ${stdout.length} bytes`;
+      stdoutHash = sha256(stdout);
+      stderrHash = sha256(stderr);
     } catch (error) {
       status = 'failed';
       exitCode = -1;
       summary = error instanceof Error ? error.message : String(error);
+      stderrHash = sha256(summary);
     }
     const evidence: Evidence = {
       id: newId('evid'),
@@ -38,10 +55,10 @@ export class VerificationOperator implements Operator {
       kind: 'command_result',
       source: { command: spec.command, args: spec.args, description: `verification for ${ctx.graphNode.objective}` },
       targetRefs: [...spec.targetRefs],
-      result: { exitCode, summary },
+      result: { exitCode, summary, stdoutHash: stdoutHash || undefined },
       status,
       reproducibility: 'reproducible',
-      hash: sha256(JSON.stringify({ command: spec.command, args: spec.args })),
+      hash: sha256(JSON.stringify({ command: spec.command, args: spec.args, cwd: spec.cwd ?? ctx.workspacePath, exitCode, stdoutHash, stderrHash })),
       createdAt: new Date().toISOString(),
     };
     ctx.commit({ evidence: [evidence] });

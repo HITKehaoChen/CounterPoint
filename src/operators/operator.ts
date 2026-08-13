@@ -17,6 +17,13 @@ import { CounterpointDeliberationOperator } from './counterpoint-deliberation.ts
 import { HumanGateOperator } from './human-gate.ts';
 import type { ProtocolEngine } from '../protocol-engine.ts';
 
+class UnavailableOperator implements Operator {
+  readonly type = 'counterpoint_deliberation' as const;
+  async run(): Promise<OperatorResult> {
+    throw new Error('OPERATOR_UNAVAILABLE');
+  }
+}
+
 export interface OperatorWriteBatch {
   artifacts?: PublishArtifactInput[];
   claims?: Claim[];
@@ -65,7 +72,10 @@ export function createOperatorRegistry(deps: { engine?: ProtocolEngine } = {}): 
     ['tool_task', new ToolTaskOperator()],
     ['verification', new VerificationOperator()],
     ['independent_review', new IndependentReviewOperator()],
-    ['counterpoint_deliberation', new CounterpointDeliberationOperator(deps.engine as ProtocolEngine)],
+    [
+      'counterpoint_deliberation',
+      deps.engine ? new CounterpointDeliberationOperator(deps.engine) : new UnavailableOperator(),
+    ],
     ['human_gate', new HumanGateOperator()],
   ]);
 }

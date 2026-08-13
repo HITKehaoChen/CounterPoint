@@ -211,15 +211,17 @@ async function main(): Promise<void> {
           `[probe] done ${fixture.id}/${planner.name} verdict=${proposal.result.verdict} attempts=${proposal.attempts} elapsed=${Date.now() - startedAt}ms spent=$ ${spentUsd.toFixed(4)}`,
         );
       } catch (error) {
+        const attemptsDetail = (error as { attemptsDetail?: PlannerAttemptDetail[] }).attemptsDetail ?? [];
         results.push({
           fixture: fixture.id,
           planner: planner.name,
           verdict: 'error',
-          attempts: 0,
+          attempts: attemptsDetail.length,
           issueCodes: [],
           topology: '',
           durationMs: Date.now() - startedAt,
           error: error instanceof Error ? error.message : String(error),
+          attemptsDetail,
         });
         console.log(`[probe] failed ${fixture.id}/${planner.name} elapsed=${Date.now() - startedAt}ms: ${results[results.length - 1].error}`);
       }

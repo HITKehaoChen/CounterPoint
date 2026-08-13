@@ -117,6 +117,7 @@ export class PlannerOrchestrator {
       } catch (error) {
         if (!(error instanceof PlannerParseError)) {
           attemptsDetail.push({ attempt: attempts, costUsd: 0, outcome: 'runtime_error' });
+          (error as Error & { attemptsDetail?: PlannerAttemptDetail[] }).attemptsDetail = attemptsDetail;
           throw error;
         }
         totalCostUsd += error.meta.costUsd ?? 0;

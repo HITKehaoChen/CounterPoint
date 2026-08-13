@@ -14,19 +14,29 @@ export class IndependentReviewOperator implements Operator {
     const producerRuns = db.nodeRuns.filter((run) => targetGraphIds.includes(run.graphNodeId));
     const producerRunIds = new Set(producerRuns.map((run) => run.id));
     const claims = db.claims.filter((claim) => claim.nodeRunId && producerRunIds.has(claim.nodeRunId));
-    const candidates: ReviewerCandidate[] = claims.map((claim, index) => ({
-      candidateId: index === 0 ? 'A' : `C${index + 1}`,
-      originalRunId: claim.nodeRunId ?? '',
-      originalPositionId: claim.id,
+    const claimsByRun = new Map<string, typeof claims>();
+    for (const claim of claims) {
+      if (!claim.nodeRunId) continue;
+      const list = claimsByRun.get(claim.nodeRunId) ?? [];
+      list.push(claim);
+      claimsByRun.set(claim.nodeRunId, list);
+    }
+    const runsById = new Map(producerRuns.map((run) => [run.id, run]));
+    const candidates: ReviewerCandidate[] = [...claimsByRun.entries()].map(([runId, runClaims], index) => ({
+      candidateId: index === 0 ? 'A' : index === 1 ? 'B' : `C${index + 1}`,
+      originalRunId: runId,
+      originalPositionId: runClaims[0].id,
       redacted: {
-        summary: claim.statement,
-        claims: [{ id: claim.id, statement: claim.statement, type: claim.type, confidence: claim.confidence }],
+        summary: runClaims.map((claim) => claim.statement).join(' | '),
+        claims: runClaims.map((claim) => ({ id: claim.id, statement: claim.statement, type: claim.type, confidence: claim.confidence })),
         unknowns: [],
         decisionConditions: [],
-        confidence: claim.confidence ?? 0.5,
+        confidence:
+          runClaims.reduce((sum, claim) => sum + (claim.confidence ?? 0.5), 0) / runClaims.length,
       },
-      artifactRefs: [],
+      artifactRefs: [...(runsById.get(runId)?.artifactRefs ?? [])],
     }));
+    if (candidates.length === 0) throw new Error('NO_REVIEW_CANDIDATES');
     const claimIds = new Set(claims.map((claim) => claim.id));
     const evidence = db.evidence
       .filter((item) => item.targetRefs.some((ref) => ref.startsWith('claim:') && claimIds.has(ref.slice('claim:'.length))))
@@ -39,10 +49,15 @@ export class IndependentReviewOperator implements Operator {
       evidence,
       unresolvedConflicts: [],
     });
-    const producerFingerprints = producerRuns.map((run) => JSON.stringify(run.adapterFingerprint ?? {}));
-    if (producerFingerprints.includes(JSON.stringify(result.fingerprint ?? {}))) {
-      throw new Error(`INDEPENDENCE_VIOLATION: reviewer lineage conflicts with target producers`);
-    }
+    const reviewerFingerprint = result.fingerprint ? JSON.stringify(result.fingerprint) : undefined;
+    const producerFingerprints = producerRuns.map((run) => (run.adapterFingerprint ? JSON.stringify(run.adapterFingerprint) : undefined));
+    const independence =
+      reviewerFingerprint === undefined || producerFingerprints.some((fingerprint) => fingerprint === undefined)
+        ? 'unknown'
+        : producerFingerprints.includes(reviewerFingerprint)
+          ? 'conflict'
+          : 'ok';
+    if (independence === 'conflict') throw new Error('INDEPENDENCE_VIOLATION: reviewer lineage conflicts with target producers');
     return {
       status: 'succeeded',
       artifactRefs: [],
@@ -56,6 +71,8 @@ export class IndependentReviewOperator implements Operator {
           evidenceSufficiency: result.evidenceSufficiency,
           unresolvedRisks: result.unresolvedRisks,
           rubricScores: result.rubricScores,
+          candidateCount: candidates.length,
+          independence,
         },
       },
       usage: { timeMs: Date.now() - started, costUsd: result.cost ?? 0 },

@@ -210,6 +210,19 @@ export function collectConstitutionIssues(input: ValidatePlanInput): ValidationI
   if (planUsesGatedAction && !hasGateNode) {
     issues.push({ code: 'GATE_REQUIRED_MISSING', path: 'nodes', message: 'plan uses a gated action but has no human_gate node', kind: 'gate' });
   }
+  const planUsesNonIdempotent = plan.nodes.some(
+    (node) =>
+      (node.operator.type === 'tool_task' || node.operator.type === 'verification') &&
+      node.operator.effectClass === 'non_idempotent',
+  );
+  if (planUsesNonIdempotent && !hasGateNode) {
+    issues.push({
+      code: 'GATE_REQUIRED_FOR_NON_IDEMPOTENT',
+      path: 'nodes',
+      message: 'non_idempotent command requires a human_gate node',
+      kind: 'gate',
+    });
+  }
   for (const stopCondition of plan.stopConditions) {
     for (const ref of stopCondition.refs) {
       if (evidenceIndex && ref.startsWith('evidence:') && evidenceIndex.get(ref) === 'unknown') {
