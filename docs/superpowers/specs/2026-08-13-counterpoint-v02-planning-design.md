@@ -256,6 +256,31 @@ A/B/C/D 对照跑 15–30 个真实历史任务，指标见 PRD 16.3。
 Mock Adapter 仅保留用于 CI 的引擎/适配器离线回归（真实 CLI 无法进 CI），不参与任何
 「效果」判断；所有效果结论必须来自 L1/L2 的真实模型运行。
 
+### 9.1 M0 评审修正（2026-08-13，有条件通过）
+
+M0 Gate 结论：有条件通过。以下四条作为 M1 的硬性前置，写入本 spec：
+
+1. **探测证据硬化（M1 Task 0）**：报告必须记录 `gitCommitSha`、Prompt 版本、
+   Schema 版本、Validator 版本；`--fresh` 模式禁止复用历史结果；`resumed` 行必须
+   保留原始运行来源与原始成本，不得与当前运行混为一谈。当前 `exit 0` 只证明多次
+   运行累计凑齐 4 个 accepted；M1 Vertical Slice 完成后必须做一次 `--fresh --strict`
+   全新运行并全部通过。
+2. **成本口径可审计**：每次 Attempt 记录输入/输出 Token、模型、成本、耗时；修复
+   尝试成本不得丢失；报告同时给出当前运行成本与历史累计成本。
+3. **语义拓扑断言替代宽松签名**：
+   - `simple-bug`：`agent_task == 1`、`verification ≥ 1`、并行宽度 = 1、无
+     Review/Deliberation；
+   - `complex-bug`：并行宽度 ≥ 2、`verification ≥ 1`、`independent_review ≥ 1`、
+     存在汇聚节点。
+   断言进入 `--strict` 验收；`topologySignature` 只用于报告展示，不再作为差异判定。
+4. **terminal output 与 decision 分离**：节点 `succeeded`（含 Reviewer 产出
+   Verdict）只表示该节点有合法输出；WorkItem 的 `Decision` 只能在 Stop Condition
+   满足后由 `recordDecision` 形成。禁止「Reviewer 已输出」自动等价于「已解决」。
+
+对既有六项修复的判断：契约工程、`needs_revision` 分类、Claude 禁工具、续跑与时间
+预算均合理；Review/Deliberation 作为合法终点的方向合理，语义按第 4 条收紧。未发现
+为通过探测而取消宪法约束。
+
 ## 10. 里程碑与 DoD
 
 ### M0：Planning Contract
@@ -284,6 +309,7 @@ DoD：
 - [ ] Reviewer 独立性按 Run 血缘验证；
 - [ ] 进程重启后可从事件链恢复；
 - [ ] Decision Pack 引用解析到固定版本（unresolvedRefs = 0）。
+- [ ] 探测报告完成一次 `--fresh --strict` 全新运行且通过语义拓扑断言（§9.1 第 3 条）。
 
 ## 11. 待确认决策（附建议默认值）
 
