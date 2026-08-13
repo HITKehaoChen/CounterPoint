@@ -181,6 +181,8 @@ async function main(): Promise<void> {
           attempts: proposal.attempts,
           issueCodes: proposal.result.issues.map((issue) => issue.code),
           topology: proposal.plan ? topologySignature(proposal.plan) : '',
+          costUsd: proposal.totalCostUsd,
+          model: proposal.attemptsDetail[proposal.attemptsDetail.length - 1]?.model,
           durationMs: Date.now() - startedAt,
         });
         console.log(
@@ -213,6 +215,10 @@ async function main(): Promise<void> {
     chrys: results.some((row) => row.planner === 'chrys' && row.verdict === 'accepted'),
     claude: results.some((row) => row.planner === 'claude-code' && row.verdict === 'accepted'),
   };
+  const currentRunCostUsd = Number(spentUsd.toFixed(6));
+  const cumulativeCostUsd = Number(
+    (results.reduce((sum, row) => sum + (row.costUsd ?? 0), 0)).toFixed(6),
+  );
   const report = {
     formatVersion: 'planner-probe/0.1.0',
     generatedAt: new Date().toISOString(),
@@ -223,6 +229,8 @@ async function main(): Promise<void> {
     budgetUsd,
     timeBudgetMs,
     spentUsd: Number(spentUsd.toFixed(6)),
+    currentRunCostUsd,
+    cumulativeCostUsd,
     budgetExceeded,
     timeBudgetExceeded,
     results,

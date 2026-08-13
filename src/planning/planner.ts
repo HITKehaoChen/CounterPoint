@@ -73,6 +73,15 @@ export interface ProposeResult {
   attempts: number;
   repairHistory: ValidationIssue[][];
   totalCostUsd: number;
+  attemptsDetail: Array<{
+    attempt: number;
+    costUsd: number;
+    durationMs?: number;
+    model?: string;
+    provider?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+  }>;
 }
 
 export class PlannerOrchestrator {
@@ -92,6 +101,7 @@ export class PlannerOrchestrator {
     let result: ValidationResult = { verdict: 'needs_revision', issues: [] };
     let totalCostUsd = 0;
     let attempts = 0;
+    const attemptsDetail: ProposeResult['attemptsDetail'] = [];
     let repairContext: PlannerInput['repairContext'];
     for (let attempt = 0; attempt <= this.maxRepairAttempts; attempt++) {
       attempts += 1;
@@ -114,13 +124,22 @@ export class PlannerOrchestrator {
         break;
       }
       totalCostUsd += proposal.meta.costUsd ?? 0;
+      attemptsDetail.push({
+        attempt: attempts,
+        costUsd: proposal.meta.costUsd ?? 0,
+        durationMs: proposal.meta.durationMs,
+        model: proposal.meta.model,
+        provider: proposal.meta.provider,
+        inputTokens: proposal.meta.usage?.inputTokens,
+        outputTokens: proposal.meta.usage?.outputTokens,
+      });
       plan = proposal.plan;
       result = this.validator({ plan, envelope: input.envelope, workItem: input.workItem, catalog: input.catalog });
       if (result.verdict !== 'needs_revision') break;
       repairHistory.push(result.issues);
       repairContext = { issues: result.issues, previousPlan: plan };
     }
-    return { plan, result, attempts, repairHistory, totalCostUsd };
+    return { plan, result, attempts, repairHistory, totalCostUsd, attemptsDetail };
   }
 }
 

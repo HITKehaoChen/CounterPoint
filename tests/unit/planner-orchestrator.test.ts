@@ -83,6 +83,29 @@ test('orchestrator rejects after repeated schema parse failures', async () => {
   assert.equal(proposal.repairHistory.length, 2);
 });
 
+test('orchestrator records per-attempt cost details', async () => {
+  let calls = 0;
+  const planner: Planner = {
+    name: 'costed-planner',
+    async plan(): Promise<PlannerResult> {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          plan: validPlan({ nodes: [badNode()] }),
+          meta: { costUsd: 0.25, model: 'm1', usage: { inputTokens: 100, outputTokens: 50 } },
+        };
+      }
+      return { plan: validPlan(), meta: { costUsd: 0.35, model: 'm2' } };
+    },
+  };
+  const orchestrator = new PlannerOrchestrator({ planner, validator: validatePlan, maxRepairAttempts: 2 });
+  const proposal = await orchestrator.propose(baseInput());
+  assert.deepEqual(proposal.attemptsDetail.map((item) => item.costUsd), [0.25, 0.35]);
+  assert.equal(proposal.attemptsDetail[0].inputTokens, 100);
+  assert.equal(proposal.attemptsDetail[0].model, 'm1');
+  assert.equal(proposal.totalCostUsd, 0.6);
+});
+
 function badNode() {
   return makeNode({
     completionCriteria: [{ id: 'c1', kind: 'evidence', description: 'needs evidence', refs: [] }],
