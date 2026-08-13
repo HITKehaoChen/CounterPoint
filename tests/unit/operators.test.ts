@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AgentTaskOperator } from '../../src/operators/agent-task.ts';
 import { ToolTaskOperator } from '../../src/operators/tool-task.ts';
+import { VerificationOperator } from '../../src/operators/verification.ts';
 import type { OperatorContext, OperatorWriteBatch } from '../../src/operators/operator.ts';
 import { MockAgentAdapter } from '../../src/adapters/mock-agent.ts';
 import { defaultWorkerAScript } from '../helpers.ts';
@@ -60,4 +61,23 @@ test('agent task commits artifacts and claims through the serialized commit call
 test('tool task rejects a command outside the envelope allowlist', async () => {
   const ctx = makeCtx({ graphNode: { ...graphNode(), operator: { type: 'tool_task', command: 'curl', args: [] } } });
   await assert.rejects(() => new ToolTaskOperator().run(ctx), /allowlist/);
+});
+
+test('verification operator commits node-level evidence', async () => {
+  const batches: OperatorWriteBatch[] = [];
+  const ctx = makeCtx(
+    {
+      graphNode: { ...graphNode(), operator: { type: 'verification', command: 'node', args: ['--version'], cwd: process.cwd(), targetRefs: ['claim:c1'] } },
+    },
+    (batch) => {
+      batches.push(batch);
+      return [];
+    },
+  );
+  const result = await new VerificationOperator().run(ctx);
+  assert.equal(result.status, 'succeeded');
+  assert.equal(batches.length, 1);
+  assert.equal(batches[0].evidence?.length, 1);
+  assert.equal(batches[0].evidence?.[0].status, 'verified');
+  assert.deepEqual(result.evidenceRefs, [batches[0].evidence![0].id]);
 });

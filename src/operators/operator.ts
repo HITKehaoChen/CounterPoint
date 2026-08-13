@@ -10,6 +10,7 @@ import type { OperatorSpec } from '../planning/schemas.ts';
 import type { Claim, ContextView, Database, Evidence, NodeRun, WorkItem } from '../schemas.ts';
 import { AgentTaskOperator } from './agent-task.ts';
 import { ToolTaskOperator } from './tool-task.ts';
+import { VerificationOperator } from './verification.ts';
 
 export interface OperatorWriteBatch {
   artifacts?: PublishArtifactInput[];
@@ -56,5 +57,6 @@ export function createOperatorRegistry(): OperatorRegistry {
   return new Map<OperatorSpec['type'], Operator>([
     ['agent_task', new AgentTaskOperator()],
     ['tool_task', new ToolTaskOperator()],
+    ['verification', new VerificationOperator()],
   ]);
 }
