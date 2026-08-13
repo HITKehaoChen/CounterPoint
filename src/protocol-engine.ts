@@ -25,7 +25,7 @@ import type {
   WorkItemRelation,
   WorkItemStatus,
 } from './schemas.ts';
-import { emptyDatabase, KnowledgeRefSchema, migrateDatabase } from './schemas.ts';
+import { emptyDatabase, KnowledgeRefSchema, migrateDatabaseV2 } from './schemas.ts';
 import { formatVersionRef, hashJson, parseVersionRef, sha256 } from './hashing.ts';
 import { newId } from './ids.ts';
 import { appendEvent } from './events.ts';
@@ -1307,10 +1307,10 @@ export class ProtocolEngine {
 
   private loadDatabase(store: Store): Database {
     try {
-      return migrateDatabase(store.load());
+      return migrateDatabaseV2(store.load());
     } catch (error) {
       if (store instanceof JsonFileStore && !existsSync((store as unknown as { filePath: string }).filePath)) {
-        return migrateDatabase(emptyDatabase());
+        return migrateDatabaseV2(emptyDatabase());
       }
       throw error;
     }

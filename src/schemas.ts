@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { AutonomyEnvelopeSchema } from './autonomy/autonomy-envelope.ts';
+import { HumanGateRequestSchema } from './autonomy/human-gate.ts';
+import { CollaborationPlanSchema } from './planning/schemas.ts';
+import { PlanPatchSchema } from './planning/plan-patch.ts';
 
 // ---------------------------------------------------------------------------
 // Counterpoint Protocol Schemas (PRD v0.1, section 12)
@@ -500,7 +504,7 @@ export const EventSchema = z.object({
 export type Event = z.infer<typeof EventSchema>;
 
 export const DatabaseSchema = z.object({
-  schemaVersion: z.string().default('0.1.0'),
+  schemaVersion: z.string().default('0.2.0'),
   projects: z.array(ProjectSchema).default([]),
   workItems: z.array(WorkItemSchema).default([]),
   deliberations: z.array(DeliberationSchema).default([]),
@@ -511,6 +515,11 @@ export const DatabaseSchema = z.object({
   artifactVersions: z.array(ArtifactVersionSchema).default([]),
   artifactContents: z.record(z.string()).default({}),
   logs: z.record(z.string()).default({}),
+  autonomyEnvelopes: z.array(AutonomyEnvelopeSchema).default([]),
+  plans: z.array(CollaborationPlanSchema).default([]),
+  planPatches: z.array(PlanPatchSchema).default([]),
+  opinions: z.array(OpinionSchema).default([]),
+  humanGateRequests: z.array(HumanGateRequestSchema).default([]),
 });
 export type Database = z.infer<typeof DatabaseSchema>;
 
@@ -553,6 +562,20 @@ export function migrateDatabase(db: Database): Database {
   return { ...db, workItems, deliberations };
 }
 
+/**
+ * v0.2 migration: runs the legacy one-to-one migration first, then maps the
+ * legacy `investigating` WorkItem status to `running`. Idempotent.
+ */
+export function migrateDatabaseV2(db: Database): Database {
+  const base = migrateDatabase(db);
+  return {
+    ...base,
+    workItems: base.workItems.map((workItem) =>
+      workItem.status === 'investigating' ? { ...workItem, status: 'running' as const } : workItem,
+    ),
+  };
+}
+
 export const AgentFingerprintSchema = z.object({
   adapter: z.string().min(1),
   model: z.string().optional(),
@@ -565,7 +588,7 @@ export type AgentFingerprint = z.infer<typeof AgentFingerprintSchema>;
 
 export function emptyDatabase(): Database {
   return {
-    schemaVersion: '0.1.0',
+    schemaVersion: '0.2.0',
     projects: [],
     workItems: [],
     deliberations: [],
@@ -576,5 +599,10 @@ export function emptyDatabase(): Database {
     artifactVersions: [],
     artifactContents: {},
     logs: {},
+    autonomyEnvelopes: [],
+    plans: [],
+    planPatches: [],
+    opinions: [],
+    humanGateRequests: [],
   };
 }
