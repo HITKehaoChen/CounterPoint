@@ -46,6 +46,7 @@ export function renderPlannerPrompt(input: PlannerInput): string {
   lines.push('');
   lines.push('## Required top-level fields (no defaults exist for these)');
   lines.push('id, workItemId, goal, rationale, nodes, stopConditions, budgetAllocation { maxTotalTimeMs, maxTotalAgents, maxTotalRounds }, createdByRunId.');
+  lines.push('Every element of nodes[], completionCriteria[] and stopConditions[] also needs a unique string "id".');
   if (input.sources.length) {
     lines.push('');
     lines.push('## Sources');

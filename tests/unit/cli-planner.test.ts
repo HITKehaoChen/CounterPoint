@@ -25,6 +25,7 @@ test('prompt includes constraints, envelope limits and no chain-of-thought reque
   const prompt = renderPlannerPrompt(input());
   assert.ok(prompt.includes('No production access'));
   assert.ok(prompt.includes('maxAgents'));
+  assert.ok(prompt.includes('unique string "id"'));
   assert.ok(!/chain.of.thought|思维链|step by step reasoning/i.test(prompt));
 });
 

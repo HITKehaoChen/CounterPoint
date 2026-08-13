@@ -10,9 +10,12 @@ import { PROBE_FIXTURES, topologySignature } from './planner-fixtures.ts';
 
 const chrysBin = process.env.CHRYS_BIN ?? 'C:\\Users\\tgyzc\\project\\chrys\\.venv\\Scripts\\chrys.exe';
 const claudeBin = process.env.CLAUDE_BIN ?? 'C:\\Users\\tgyzc\\.local\\bin\\claude.exe';
-const claudeModel = process.env.PLANNER_MODEL ?? 'deepseek-v4-pro[1m]';
+const claudeModel = process.env.PLANNER_MODEL ?? 'deepseek-v4-flash';
 const budgetUsd = Number(process.env.PROBE_BUDGET_USD ?? 6);
-const plannerTimeoutMs = Number(process.env.PLANNER_TIMEOUT_MS ?? 900_000);
+const plannerTimeoutMs = Number(process.env.PLANNER_TIMEOUT_MS ?? 600_000);
+const timeBudgetMs = Number(process.env.PROBE_TIME_BUDGET_MS ?? 1_200_000);
+const fixtureFilter = (process.env.PROBE_FIXTURES ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+const plannerFilter = (process.env.PROBE_PLANNERS ?? '').split(',').map((item) => item.trim()).filter(Boolean);
 const chrysCostRates = { inputPerMTokenUsd: 5, outputPerMTokenUsd: 25 };
 const workspaceRoot = process.env.PROBE_WORKSPACE ?? join(process.cwd(), 'data', 'probe', 'workspaces');
 const catalog = catalogFromEntries([
@@ -41,6 +44,7 @@ interface FixtureResult {
 }
 
 async function main(): Promise<void> {
+  const probeStartedAt = Date.now();
   mkdirSync(workspaceRoot, { recursive: true });
   const planners: PlannerEntry[] = [
     {
@@ -76,8 +80,9 @@ async function main(): Promise<void> {
   const results: FixtureResult[] = [];
   let spentUsd = 0;
   let budgetExceeded = false;
+  let timeBudgetExceeded = false;
 
-  for (const fixture of PROBE_FIXTURES) {
+  for (const fixture of PROBE_FIXTURES.filter((item) => fixtureFilter.length === 0 || fixtureFilter.includes(item.id))) {
     const workspaceId = `probe_${fixture.id}`;
     const envelope = tightenEnvelope(defaultAutonomyEnvelope(workspaceId), fixture.envelopeOverrides);
     const input: PlannerInput = {
@@ -106,13 +111,17 @@ async function main(): Promise<void> {
       sources: fixture.sources,
       reusableEvidence: [],
     };
-    for (const planner of planners) {
+    for (const planner of planners.filter((item) => plannerFilter.length === 0 || plannerFilter.includes(item.name))) {
+      if (Date.now() - probeStartedAt > timeBudgetMs) {
+        timeBudgetExceeded = true;
+        break;
+      }
       if (spentUsd >= budgetUsd) {
         budgetExceeded = true;
         break;
       }
       mkdirSync(planner.workspaceDir, { recursive: true });
-      const orchestrator = new PlannerOrchestrator({ planner: planner.adapter, validator: validatePlan, maxRepairAttempts: 2 });
+      const orchestrator = new PlannerOrchestrator({ planner: planner.adapter, validator: validatePlan, maxRepairAttempts: 1 });
       const startedAt = Date.now();
       try {
         const proposal = await orchestrator.propose(input);
@@ -139,7 +148,7 @@ async function main(): Promise<void> {
         });
       }
     }
-    if (budgetExceeded) break;
+    if (budgetExceeded || timeBudgetExceeded) break;
   }
 
   const diversityByPlanner = new Map<string, boolean>();
@@ -156,8 +165,10 @@ async function main(): Promise<void> {
     formatVersion: 'planner-probe/0.1.0',
     generatedAt: new Date().toISOString(),
     budgetUsd,
+    timeBudgetMs,
     spentUsd: Number(spentUsd.toFixed(6)),
     budgetExceeded,
+    timeBudgetExceeded,
     results,
     acceptance,
     diversity: Object.fromEntries(diversityByPlanner),
