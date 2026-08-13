@@ -83,6 +83,7 @@ export const NodeBudgetSchema = z.object({
   maxTokens: z.number().positive().optional(),
   maxCostUsd: z.number().positive().optional(),
 });
+export type NodeBudget = z.infer<typeof NodeBudgetSchema>;
 
 export const CollaborationNodeSchema = z.object({
   id: z.string().min(1),
