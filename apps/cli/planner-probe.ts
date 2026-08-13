@@ -10,7 +10,7 @@ import { CliPlannerAdapter } from '../../src/planning/cli-planner.ts';
 import { PLANNER_PROMPT_VERSION } from '../../src/planning/planner-prompt.ts';
 import { VALIDATOR_VERSION } from '../../src/planning/plan-validator.ts';
 import { SCHEMA_VERSION } from '../../src/schemas.ts';
-import { PROBE_FIXTURES, topologySignature } from './planner-fixtures.ts';
+import { PROBE_FIXTURES, assertPlanTopology, topologySignature } from './planner-fixtures.ts';
 
 export const HELP_TEXT = [
   'Usage: node apps/cli/planner-probe.ts [--strict] [--fresh] [--help]',
@@ -54,6 +54,7 @@ interface FixtureResult {
   error?: string;
   resumed?: boolean;
   originalRunId?: string;
+  topologyViolations?: string[];
 }
 
 function loadResumedResults(options: { fresh: boolean }): FixtureResult[] {
@@ -174,6 +175,7 @@ async function main(): Promise<void> {
       try {
         const proposal = await orchestrator.propose(input);
         spentUsd += proposal.totalCostUsd;
+        const topologyViolations = proposal.plan ? assertPlanTopology(proposal.plan, fixture.topology) : [];
         results.push({
           fixture: fixture.id,
           planner: planner.name,
@@ -184,6 +186,7 @@ async function main(): Promise<void> {
           costUsd: proposal.totalCostUsd,
           model: proposal.attemptsDetail[proposal.attemptsDetail.length - 1]?.model,
           durationMs: Date.now() - startedAt,
+          topologyViolations,
         });
         console.log(
           `[probe] done ${fixture.id}/${planner.name} verdict=${proposal.result.verdict} attempts=${proposal.attempts} elapsed=${Date.now() - startedAt}ms spent=$ ${spentUsd.toFixed(4)}`,
@@ -244,7 +247,16 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(report, null, 2));
 
   const strict = process.argv.includes('--strict');
-  const passed = acceptance.chrys && acceptance.claude && [...diversityByPlanner.values()].every(Boolean);
+  const allCombos = PROBE_FIXTURES.filter((item) => fixtureFilter.length === 0 || fixtureFilter.includes(item.id))
+    .flatMap((fixture) =>
+      planners
+        .filter((item) => plannerFilter.length === 0 || plannerFilter.includes(item.name))
+        .map((planner) => ({ fixture, planner })),
+    );
+  const passed = allCombos.every(({ fixture, planner }) => {
+    const row = results.find((item) => item.fixture === fixture.id && item.planner === planner.name);
+    return Boolean(row && row.verdict === 'accepted' && Array.isArray(row.topologyViolations) && row.topologyViolations.length === 0);
+  });
   if (strict && !passed) process.exitCode = 1;
 }
 
