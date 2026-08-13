@@ -209,6 +209,11 @@ export class ProtocolEngine {
     kind: WorkItemKind;
     title: string;
     description?: string;
+    goal?: string;
+    constraints?: string[];
+    expectedOutcomes?: string[];
+    sourceRefs?: string[];
+    autonomyEnvelopeId?: string;
     ownerId?: string;
     templateFields?: Record<string, unknown>;
   }): WorkItem {
@@ -219,6 +224,11 @@ export class ProtocolEngine {
       kind: input.kind,
       title: input.title,
       description: input.description,
+      goal: input.goal,
+      constraints: input.constraints ?? [],
+      expectedOutcomes: input.expectedOutcomes ?? [],
+      sourceRefs: input.sourceRefs ?? [],
+      autonomyEnvelopeId: input.autonomyEnvelopeId,
       ownerId: input.ownerId ?? 'human-owner',
       status: 'open',
       templateFields: input.templateFields ?? {},

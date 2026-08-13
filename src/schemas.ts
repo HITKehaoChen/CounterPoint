@@ -297,11 +297,18 @@ export const WorkItemKindSchema = z.enum([
 export type WorkItemKind = z.infer<typeof WorkItemKindSchema>;
 
 export const WorkItemStatusSchema = z.enum([
+  'draft',
   'open',
-  'investigating',
+  'planning',
+  'running',
+  'waiting_human',
+  'blocked',
   'resolved',
+  'partially_resolved',
   'rejected',
   'needs_evidence',
+  'archived',
+  'investigating', // legacy: migrated to 'running' by migrateDatabaseV2
 ]);
 export type WorkItemStatus = z.infer<typeof WorkItemStatusSchema>;
 
@@ -383,6 +390,11 @@ export const WorkItemSchema = z.object({
   kind: WorkItemKindSchema,
   title: z.string().min(1),
   description: z.string().optional(),
+  goal: z.string().optional(),
+  constraints: z.array(z.string()).default([]),
+  expectedOutcomes: z.array(z.string()).default([]),
+  sourceRefs: z.array(z.string()).default([]),
+  autonomyEnvelopeId: z.string().optional(),
   ownerId: z.string().min(1),
   status: WorkItemStatusSchema,
   templateFields: z.record(z.unknown()).default({}),
@@ -500,6 +512,11 @@ export function migrateDatabase(db: Database): Database {
       kind: 'decision',
       title: packet?.problem ?? 'Untitled work item',
       description: packet?.deliverable,
+      goal: undefined,
+      constraints: [],
+      expectedOutcomes: [],
+      sourceRefs: [],
+      autonomyEnvelopeId: undefined,
       ownerId: deliberation.ownerId,
       status: deliberation.state === 'decided' ? 'resolved' : 'open',
       currentConclusionRefs: decision ? [...decision.selectedRefs] : [],
