@@ -154,6 +154,32 @@ export function collectConstitutionIssues(input: ValidatePlanInput): ValidationI
   const issues: ValidationIssue[] = [];
   const byId = new Map(plan.nodes.map((node) => [node.id, node]));
   for (const node of plan.nodes) {
+    if ((node.operator.type === 'tool_task' || node.operator.type === 'verification') && node.operator.effectClass === undefined) {
+      issues.push({
+        code: 'EFFECT_CLASS_REQUIRED',
+        path: `nodes.${node.id}.operator.effectClass`,
+        message: 'tool_task/verification must declare effectClass',
+        kind: 'gate',
+      });
+    }
+    if (node.operator.type === 'counterpoint_deliberation') {
+      if (node.operator.challengeRounds > 0) {
+        issues.push({
+          code: 'DELIBERATION_UNSUPPORTED_CHALLENGE_ROUNDS',
+          path: `nodes.${node.id}.operator.challengeRounds`,
+          message: 'challengeRounds > 0 is not supported in M1',
+          kind: 'dag',
+        });
+      }
+      if (node.operator.reviewerPolicy !== 'anonymous-rubric') {
+        issues.push({
+          code: 'DELIBERATION_UNSUPPORTED_REVIEWER_POLICY',
+          path: `nodes.${node.id}.operator.reviewerPolicy`,
+          message: "only reviewerPolicy 'anonymous-rubric' is supported in M1",
+          kind: 'dag',
+        });
+      }
+    }
     for (const ref of node.inputRefs) {
       const producerId = ref.split(':')[0];
       const producer = byId.get(producerId);

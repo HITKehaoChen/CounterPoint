@@ -161,3 +161,40 @@ test('a published artifact propagates to dependent nodes only', async () => {
   const materializedC = materializeNodeContext({ view: viewC, db, workItem: validWorkItem() });
   assert.equal(materializedC.visibleArtifacts.length, 0);
 });
+
+test('normalized claim and evidence refs propagate to dependent nodes', () => {
+  const db = emptyDatabase();
+  db.claims.push({ id: 'c1', workItemId: 'wi_test', nodeRunId: 'nr_a', statement: 's', type: 'fact', evidenceRefs: [] });
+  db.evidence.push({
+    id: 'e1',
+    workItemId: 'wi_test',
+    planId: 'plan_test',
+    nodeRunId: 'nr_a',
+    kind: 'command_result',
+    source: { command: 'node', args: [] },
+    targetRefs: ['claim:c1'],
+    result: { exitCode: 0 },
+    status: 'verified',
+    hash: 'h',
+    createdAt: 't',
+  });
+  const emptyPolicy = { visibility: 'shared' as const, readScopes: [], writeScopes: [], includeObjectTypes: [], excludeObjectTypes: [] };
+  const plan = validPlan({
+    nodes: [
+      makeNode({ id: 'a', contextPolicy: emptyPolicy }),
+      makeNode({ id: 'b', dependsOn: ['a'], contextPolicy: emptyPolicy }),
+    ],
+  });
+  const graph = compilePlan({ plan, catalog });
+  const view = buildNodeContextView({
+    node: graph.nodes[1],
+    db,
+    workItem: validWorkItem(),
+    nodes: graph.nodes,
+    producerIndex: new Map([['gn_a', ['claim:c1', 'evidence:e1']]]),
+    producerVisibility: new Map([['gn_a', 'shared']]),
+    seed: 't',
+  });
+  assert.deepEqual(view.visible.claims, ['c1']);
+  assert.deepEqual(view.visible.evidence, ['e1']);
+});

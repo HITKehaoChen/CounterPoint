@@ -238,3 +238,39 @@ test('non-idempotent command with a gate node is accepted', () => {
   const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
   assert.equal(result.verdict, 'accepted');
 });
+
+test('missing effectClass on a command node needs revision', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({
+        operator: { type: 'tool_task', command: 'git', args: ['status'] },
+        capabilityRequirements: ['verification'],
+      }),
+    ],
+  });
+  const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
+  assert.equal(result.verdict, 'needs_revision');
+  assert.ok(result.issues.some((issue) => issue.code === 'EFFECT_CLASS_REQUIRED'));
+});
+
+test('unsupported deliberation options need revision', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({
+        operator: {
+          type: 'counterpoint_deliberation',
+          workerCount: 2,
+          blind: true,
+          commitReveal: true,
+          challengeRounds: 1,
+          verificationPolicy: { commands: [{ command: 'node', args: ['--version'], targetKinds: ['claims'] }] },
+          reviewerPolicy: 'mock',
+        },
+      }),
+    ],
+  });
+  const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
+  assert.equal(result.verdict, 'needs_revision');
+  assert.ok(result.issues.some((issue) => issue.code === 'DELIBERATION_UNSUPPORTED_CHALLENGE_ROUNDS'));
+  assert.ok(result.issues.some((issue) => issue.code === 'DELIBERATION_UNSUPPORTED_REVIEWER_POLICY'));
+});

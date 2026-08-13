@@ -10,7 +10,7 @@ test('parallel reservations cannot oversell the envelope time budget', () => {
 });
 
 test('settle records actual usage and release returns the remainder', () => {
-  const ledger = new BudgetLedger(validEnvelope({ timeBudgetMs: 100 }));
+  const ledger = new BudgetLedger(validEnvelope({ timeBudgetMs: 1000 }));
   ledger.reserve('nr_a', { maxTimeMs: 100 });
   ledger.settle('nr_a', { timeMs: 40 });
   ledger.release('nr_a');
@@ -27,12 +27,13 @@ test('settle beyond the reserved node budget throws', () => {
 
 test('ledger snapshot restores reservations and settled totals', () => {
   const first = new BudgetLedger(validEnvelope({ timeBudgetMs: 100 }));
-  first.reserve('nr_a', { maxTimeMs: 100 });
+  first.reserve('nr_a', { maxTimeMs: 99 });
   first.settle('nr_a', { timeMs: 20 });
   const restored = new BudgetLedger(validEnvelope({ timeBudgetMs: 100 }), first.snapshot());
   assert.equal(restored.snapshot().totalSettledTimeMs, 20);
   assert.equal(restored.canReserve({ maxTimeMs: 90 }), false);
-  assert.equal(restored.canReserve({ maxTimeMs: 80 }), true);
+  assert.equal(restored.canReserve({ maxTimeMs: 80 }), false);
+  assert.equal(restored.canReserve({ maxTimeMs: 79 }), true);
 });
 
 test('canRetry counts reserve calls against maxRetries', () => {

@@ -24,7 +24,7 @@ test('a valid plan with a deliberation node parses', () => {
           blind: true,
           commitReveal: true,
           challengeRounds: 1,
-          verificationPolicy: 'code-search-and-tests',
+          verificationPolicy: { commands: [{ command: 'node', args: ['--version'], targetKinds: ['claims'] }] },
           reviewerPolicy: 'anonymous-rubric',
         },
         completionCriteria: [{ id: 'c1', kind: 'human_acceptance', description: 'human approves ADR' }],
@@ -51,7 +51,7 @@ test('deliberation operator enforces blind commit-reveal constants', () => {
     blind: true,
     commitReveal: true,
     challengeRounds: 2,
-    verificationPolicy: 'tests',
+    verificationPolicy: { commands: [{ command: 'node', args: ['--version'] }] },
     reviewerPolicy: 'rubric',
   });
   assert.equal(parsed.workerCount, 3);

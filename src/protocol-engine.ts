@@ -95,6 +95,8 @@ export interface CreateDeliberationInput {
   timeoutPolicy?: Deliberation['timeoutPolicy'];
   /** Links this ResearchRound to a WorkItem and freezes its current version. */
   workItemId?: string;
+  /** Limits the packet to these SourceBinding ids instead of the whole project. */
+  sourceIds?: string[];
 }
 
 export interface AddParticipantInput {
@@ -469,6 +471,9 @@ export class ProtocolEngine {
     const workItemSnapshot = input.workItemId
       ? this.buildWorkItemSnapshot(input.workItemId)
       : undefined;
+    const sourceIds = input.sourceIds ?? project.sourceBindings.map((binding) => binding.id);
+    const unknownSources = sourceIds.filter((id) => !project.sourceBindings.some((binding) => binding.id === id));
+    if (unknownSources.length) throw new Error(`UNKNOWN_SOURCE: ${unknownSources.join(', ')}`);
     const packet: TaskPacket = {
       id: newId('tp'),
       version: 1,
@@ -476,7 +481,7 @@ export class ProtocolEngine {
       goals: input.goals,
       constraints: input.constraints,
       rubric: input.rubric,
-      sources: project.sourceBindings.map((binding) => binding.id),
+      sources: sourceIds,
       deliverable: input.deliverable,
       workItemSnapshot,
     };
@@ -887,6 +892,7 @@ export class ProtocolEngine {
     kind?: Evidence['kind'];
     sourceDescription?: string;
     reproducibility?: Evidence['reproducibility'];
+    hash?: string;
   }): Evidence {
     const deliberation = this.requireDeliberation(input.deliberationId);
     if (!['challenging', 'verifying', 'reviewing'].includes(deliberation.state)) {
@@ -900,6 +906,7 @@ export class ProtocolEngine {
       kind: input.kind,
       sourceDescription: input.sourceDescription,
       reproducibility: input.reproducibility,
+      hash: input.hash,
     });
     this.mutate(`evidence.recorded ${evidence.id}`, {
       type: 'evidence.recorded',

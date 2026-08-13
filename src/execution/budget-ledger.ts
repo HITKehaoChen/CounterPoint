@@ -51,13 +51,13 @@ export class BudgetLedger {
   }
 
   canReserve(nodeBudget: NodeBudget): boolean {
-    if (this.totalReservedTimeMs() + this.totalSettledTimeMs + nodeBudget.maxTimeMs > this.envelope.timeBudgetMs) {
+    if (this.totalReservedTimeMs() + this.totalSettledTimeMs + nodeBudget.maxTimeMs >= this.envelope.timeBudgetMs) {
       return false;
     }
-    if (this.envelope.tokenBudget !== undefined && this.totalSettledTokens > this.envelope.tokenBudget) {
+    if (this.envelope.tokenBudget !== undefined && this.totalSettledTokens >= this.envelope.tokenBudget) {
       return false;
     }
-    if (this.envelope.costBudget !== undefined && this.totalSettledCostUsd > this.envelope.costBudget) {
+    if (this.envelope.costBudget !== undefined && this.totalSettledCostUsd >= this.envelope.costBudget) {
       return false;
     }
     return true;

@@ -22,20 +22,26 @@ export class IndependentReviewOperator implements Operator {
       claimsByRun.set(claim.nodeRunId, list);
     }
     const runsById = new Map(producerRuns.map((run) => [run.id, run]));
-    const candidates: ReviewerCandidate[] = [...claimsByRun.entries()].map(([runId, runClaims], index) => ({
-      candidateId: index === 0 ? 'A' : index === 1 ? 'B' : `C${index + 1}`,
-      originalRunId: runId,
-      originalPositionId: runClaims[0].id,
-      redacted: {
-        summary: runClaims.map((claim) => claim.statement).join(' | '),
-        claims: runClaims.map((claim) => ({ id: claim.id, statement: claim.statement, type: claim.type, confidence: claim.confidence })),
-        unknowns: [],
-        decisionConditions: [],
-        confidence:
-          runClaims.reduce((sum, claim) => sum + (claim.confidence ?? 0.5), 0) / runClaims.length,
-      },
-      artifactRefs: [...(runsById.get(runId)?.artifactRefs ?? [])],
-    }));
+    const candidates: ReviewerCandidate[] = producerRuns.map((run, index) => {
+      const runClaims = claimsByRun.get(run.id) ?? [];
+      const confidence =
+        runClaims.length === 0
+          ? 0.5
+          : runClaims.reduce((sum, claim) => sum + (claim.confidence ?? 0.5), 0) / runClaims.length;
+      return {
+        candidateId: String.fromCharCode(65 + (index % 26)),
+        originalRunId: run.id,
+        originalPositionId: runClaims[0]?.id ?? run.id,
+        redacted: {
+          summary: runClaims.map((claim) => claim.statement).join(' | '),
+          claims: runClaims.map((claim) => ({ id: claim.id, statement: claim.statement, type: claim.type, confidence: claim.confidence })),
+          unknowns: [],
+          decisionConditions: [],
+          confidence,
+        },
+        artifactRefs: [...(runsById.get(run.id)?.artifactRefs ?? [])],
+      };
+    });
     if (candidates.length === 0) throw new Error('NO_REVIEW_CANDIDATES');
     const claimIds = new Set(claims.map((claim) => claim.id));
     const evidence = db.evidence
@@ -51,12 +57,11 @@ export class IndependentReviewOperator implements Operator {
     });
     const reviewerFingerprint = result.fingerprint ? JSON.stringify(result.fingerprint) : undefined;
     const producerFingerprints = producerRuns.map((run) => (run.adapterFingerprint ? JSON.stringify(run.adapterFingerprint) : undefined));
-    const independence =
-      reviewerFingerprint === undefined || producerFingerprints.some((fingerprint) => fingerprint === undefined)
-        ? 'unknown'
-        : producerFingerprints.includes(reviewerFingerprint)
-          ? 'conflict'
-          : 'ok';
+    const knownConflict =
+      reviewerFingerprint !== undefined && producerFingerprints.includes(reviewerFingerprint);
+    const missingFingerprint =
+      reviewerFingerprint === undefined || producerFingerprints.some((fingerprint) => fingerprint === undefined);
+    const independence = knownConflict ? 'conflict' : missingFingerprint ? 'unknown' : 'ok';
     if (independence === 'conflict') throw new Error('INDEPENDENCE_VIOLATION: reviewer lineage conflicts with target producers');
     return {
       status: 'succeeded',

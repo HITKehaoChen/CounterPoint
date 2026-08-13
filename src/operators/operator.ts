@@ -66,6 +66,20 @@ export interface Operator {
 
 export type OperatorRegistry = Map<OperatorSpec['type'], Operator>;
 
+/**
+ * Canonical producer-index refs for Task 9: artifact refs are already version
+ * refs; claims/evidence must be prefixed so Context View categorization works.
+ */
+export function normalizeOutputRefs(
+  result: Pick<OperatorResult, 'artifactRefs' | 'claimRefs' | 'evidenceRefs'>,
+): string[] {
+  return [
+    ...result.artifactRefs,
+    ...result.claimRefs.map((id) => `claim:${id}`),
+    ...result.evidenceRefs.map((id) => `evidence:${id}`),
+  ];
+}
+
 export function createOperatorRegistry(deps: { engine?: ProtocolEngine } = {}): OperatorRegistry {
   return new Map<OperatorSpec['type'], Operator>([
     ['agent_task', new AgentTaskOperator()],

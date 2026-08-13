@@ -33,6 +33,7 @@ export interface EvidenceSubmissionInput {
   kind?: Evidence['kind'];
   sourceDescription?: string;
   reproducibility?: Evidence['reproducibility'];
+  hash?: string;
 }
 
 /**
@@ -165,7 +166,7 @@ export class EvidenceLedger {
       result: { summary: input.resultSummary },
       status: input.status,
       reproducibility: input.reproducibility,
-      hash: sha256(JSON.stringify(input)),
+      hash: input.hash ?? sha256(JSON.stringify(input)),
       createdAt: new Date().toISOString(),
     };
     this.deliberation.evidence.push(evidence);

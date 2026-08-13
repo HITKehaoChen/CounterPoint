@@ -83,7 +83,7 @@ test('simple topology rejects a deliberation node', () => {
           blind: true,
           commitReveal: true,
           challengeRounds: 0,
-          verificationPolicy: 'version',
+          verificationPolicy: { commands: [{ command: 'node', args: ['--version'], targetKinds: ['claims'] }] },
           reviewerPolicy: 'mock',
         },
       }),

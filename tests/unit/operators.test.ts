@@ -7,7 +7,7 @@ import { IndependentReviewOperator } from '../../src/operators/independent-revie
 import { MockReviewerAdapter } from '../../src/adapters/mock-reviewer.ts';
 import { CounterpointDeliberationOperator } from '../../src/operators/counterpoint-deliberation.ts';
 import { HumanGateOperator } from '../../src/operators/human-gate.ts';
-import { createOperatorRegistry } from '../../src/operators/operator.ts';
+import { createOperatorRegistry, normalizeOutputRefs } from '../../src/operators/operator.ts';
 import type { AgentAdapter, AgentRunInput, AgentRunResult } from '../../src/adapters/agent.ts';
 import { ProtocolEngine } from '../../src/protocol-engine.ts';
 import { InMemoryStore } from '../../src/store.ts';
@@ -145,6 +145,7 @@ test('deliberation facade pauses at the human gate and resumes to decided', asyn
           : undefined,
   });
   const project = engine.createProject({ name: 'Facade' });
+  const source = engine.addSourceBinding({ projectId: project.id, type: 'text', label: 'spec', text: 'spec text' });
   const workItem = engine.createWorkItem({ workspaceId: project.id, kind: 'decision', title: 'transport choice' });
   const db = engine.deliberationDatabase;
   const nodeRun = NodeRunSchema.parse({ id: 'nr_delib', workItemId: workItem.id, planId: 'plan_1', planVersion: 1, graphNodeId: 'gn_delib', role: 'Deliberation', operatorType: 'counterpoint_deliberation', status: 'running' });
@@ -159,7 +160,7 @@ test('deliberation facade pauses at the human gate and resumes to decided', asyn
       dependsOn: [],
       inputRefs: [],
       contextPolicy: { visibility: 'blind', readScopes: [], writeScopes: [], includeObjectTypes: [], excludeObjectTypes: [] },
-      operator: { type: 'counterpoint_deliberation', workerCount: 2, blind: true, commitReveal: true, challengeRounds: 0, verificationPolicy: 'version', reviewerPolicy: 'mock', humanGatePolicy: 'always' },
+      operator: { type: 'counterpoint_deliberation', workerCount: 2, blind: true, commitReveal: true, challengeRounds: 0, verificationPolicy: { commands: [{ command: 'node', args: ['--version'], cwd: process.cwd(), targetKinds: ['claims'] }] }, reviewerPolicy: 'anonymous-rubric', humanGatePolicy: 'always' },
       capabilityRequirements: [],
       completionCriteria: [],
       failurePolicy: { maxRetries: 0, onFailure: 'escalate' },
@@ -169,7 +170,7 @@ test('deliberation facade pauses at the human gate and resumes to decided', asyn
     },
     nodeRun,
     workItem,
-    contextView: { id: 'c', runId: 'nr_delib', phase: 'node', visible: { authoritySources: [], artifacts: [], claims: [], evidence: [] }, hidden: { agentRuns: [], objectTypes: [] }, tools: { allow: [], deny: [] }, hash: 'h' },
+    contextView: { id: 'c', runId: 'nr_delib', phase: 'node', visible: { authoritySources: [`${source.id}@v1`], artifacts: [], claims: [], evidence: [] }, hidden: { agentRuns: [], objectTypes: [] }, tools: { allow: [], deny: [] }, hash: 'h' },
     workspacePath: 'C:/tmp/facade-test',
     envelope: defaultAutonomyEnvelope(project.id),
     resolveAgent: () => new MockAgentAdapter(defaultWorkerAScript),
@@ -246,6 +247,35 @@ test('independent review groups candidates by producer run', async () => {
   assert.equal((result.outputs as { review: { candidateCount: number } }).review.candidateCount, 2);
 });
 
+test('a target run with only artifacts still becomes a candidate', async () => {
+  const db = emptyDatabase();
+  db.nodeRuns.push(
+    NodeRunSchema.parse({ id: 'nr_a', workItemId: 'wi_test', planId: 'plan_test', planVersion: 1, graphNodeId: 'gn_a', role: 'src', operatorType: 'agent_task', status: 'succeeded', artifactRefs: ['note@v1'] }),
+  );
+  const ctx = makeCtx({
+    graphNode: { ...graphNode(), operator: { type: 'independent_review', rubricRef: 'rubric:1', targetNodeIds: ['a'] } },
+    resolveReviewer: () => new MockReviewerAdapter({ recommendation: 'candidate_a', evidenceSufficiency: 'partial' }),
+    readDb: () => db,
+  });
+  const result = await new IndependentReviewOperator().run(ctx);
+  assert.equal((result.outputs as { review: { candidateCount: number } }).review.candidateCount, 1);
+});
+
+test('known fingerprint conflict wins over missing fingerprints', async () => {
+  const db = emptyDatabase();
+  const reviewerFingerprint = { adapter: 'mock-reviewer', model: 'mock-reviewer-model', provider: 'mock-provider', promptVersion: 'reviewer-prompt-1', toolset: ['read_candidates', 'read_rubric', 'read_evidence'] };
+  db.nodeRuns.push(
+    NodeRunSchema.parse({ id: 'nr_a', workItemId: 'wi_test', planId: 'plan_test', planVersion: 1, graphNodeId: 'gn_a', role: 'src', operatorType: 'agent_task', status: 'succeeded', adapterFingerprint: reviewerFingerprint }),
+    NodeRunSchema.parse({ id: 'nr_b', workItemId: 'wi_test', planId: 'plan_test', planVersion: 1, graphNodeId: 'gn_b', role: 'src', operatorType: 'agent_task', status: 'succeeded' }),
+  );
+  const ctx = makeCtx({
+    graphNode: { ...graphNode(), operator: { type: 'independent_review', rubricRef: 'rubric:1', targetNodeIds: ['a', 'b'] } },
+    resolveReviewer: () => new MockReviewerAdapter({ recommendation: 'candidate_a', evidenceSufficiency: 'partial' }),
+    readDb: () => db,
+  });
+  await assert.rejects(() => new IndependentReviewOperator().run(ctx), /INDEPENDENCE_VIOLATION/);
+});
+
 test('registry without an engine exposes an unavailable deliberation operator', async () => {
   const registry = createOperatorRegistry();
   const op = registry.get('counterpoint_deliberation')!;
@@ -266,6 +296,7 @@ test('deliberation facade without a human gate does not fabricate a decision', a
           : undefined,
   });
   const project = engine.createProject({ name: 'Facade' });
+  const source = engine.addSourceBinding({ projectId: project.id, type: 'text', label: 'spec', text: 'spec text' });
   const workItem = engine.createWorkItem({ workspaceId: project.id, kind: 'decision', title: 'transport choice' });
   const db = engine.deliberationDatabase;
   const op = new CounterpointDeliberationOperator(engine);
@@ -278,7 +309,7 @@ test('deliberation facade without a human gate does not fabricate a decision', a
       dependsOn: [],
       inputRefs: [],
       contextPolicy: { visibility: 'blind', readScopes: [], writeScopes: [], includeObjectTypes: [], excludeObjectTypes: [] },
-      operator: { type: 'counterpoint_deliberation', workerCount: 2, blind: true, commitReveal: true, challengeRounds: 0, verificationPolicy: 'version', reviewerPolicy: 'mock' },
+      operator: { type: 'counterpoint_deliberation', workerCount: 2, blind: true, commitReveal: true, challengeRounds: 0, verificationPolicy: { commands: [{ command: 'node', args: ['--version'], cwd: process.cwd(), targetKinds: ['claims'] }] }, reviewerPolicy: 'anonymous-rubric' },
       capabilityRequirements: [],
       completionCriteria: [],
       failurePolicy: { maxRetries: 0, onFailure: 'escalate' },
@@ -288,7 +319,7 @@ test('deliberation facade without a human gate does not fabricate a decision', a
     },
     nodeRun: NodeRunSchema.parse({ id: 'nr_delib2', workItemId: workItem.id, planId: 'plan_2', planVersion: 1, graphNodeId: 'gn_delib', role: 'Deliberation', operatorType: 'counterpoint_deliberation', status: 'running' }),
     workItem,
-    contextView: { id: 'c', runId: 'nr_delib2', phase: 'node', visible: { authoritySources: [], artifacts: [], claims: [], evidence: [] }, hidden: { agentRuns: [], objectTypes: [] }, tools: { allow: [], deny: [] }, hash: 'h' },
+    contextView: { id: 'c', runId: 'nr_delib2', phase: 'node', visible: { authoritySources: [`${source.id}@v1`], artifacts: [], claims: [], evidence: [] }, hidden: { agentRuns: [], objectTypes: [] }, tools: { allow: [], deny: [] }, hash: 'h' },
     workspacePath: 'C:/tmp/facade-no-gate',
     envelope: defaultAutonomyEnvelope(project.id),
     resolveAgent: () => new MockAgentAdapter(defaultWorkerAScript),
@@ -360,4 +391,11 @@ test('verification evidence hash binds the execution result', async () => {
   assert.notEqual(ok.evidence?.hash, failed.evidence?.hash);
   assert.equal(ok.evidence?.result.exitCode, 0);
   assert.equal(failed.evidence?.result.exitCode, -1);
+});
+
+test('normalizeOutputRefs prefixes claims and evidence for the producer index', () => {
+  assert.deepEqual(
+    normalizeOutputRefs({ artifactRefs: ['note@v1'], claimRefs: ['c1'], evidenceRefs: ['e1'] }),
+    ['note@v1', 'claim:c1', 'evidence:e1'],
+  );
 });

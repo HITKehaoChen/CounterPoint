@@ -35,6 +35,8 @@ export function renderPlannerPrompt(input: PlannerInput): string {
   lines.push('Any non_idempotent command requires at least one human_gate node in the plan.');
   lines.push('- independent_review { type, rubricRef, targetNodeIds }');
   lines.push('- counterpoint_deliberation { type, workerCount, blind, commitReveal, challengeRounds, verificationPolicy, reviewerPolicy }');
+  lines.push('counterpoint_deliberation in this runtime: challengeRounds must be 0, reviewerPolicy must be "anonymous-rubric",');
+  lines.push('and verificationPolicy must be { commands: [{ command, args, cwd?, targetKinds: ["claims"|"artifacts"|"sources"] }] }.');
   lines.push('- human_gate { type, summary }');
   lines.push('');
   lines.push('## Node contract');

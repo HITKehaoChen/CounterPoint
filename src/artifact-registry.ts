@@ -78,9 +78,13 @@ export class ArtifactRegistry {
     } else {
       // Versioned update: logical metadata may be clarified, but old versions
       // are untouched.
+      const nextVisibility = input.visibility ?? artifact.visibility;
+      if (artifact.visibility !== 'shared' && nextVisibility === 'shared') {
+        throw new Error('VISIBILITY_WIDENING_FORBIDDEN');
+      }
       artifact.type = input.type;
       artifact.ownerRunId = input.ownerRunId ?? artifact.ownerRunId;
-      artifact.visibility = input.visibility ?? artifact.visibility;
+      artifact.visibility = nextVisibility;
     }
 
     const contentRef = `content_${contentHash}`;

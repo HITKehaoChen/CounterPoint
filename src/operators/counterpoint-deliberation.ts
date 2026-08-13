@@ -3,6 +3,7 @@ import type { ProtocolEngine } from '../protocol-engine.ts';
 import type { Decision, Deliberation } from '../schemas.ts';
 import type { Operator, OperatorContext, OperatorResult } from './operator.ts';
 import { VerificationOperator } from './verification.ts';
+import { parseVersionRef } from '../hashing.ts';
 
 export class CounterpointDeliberationOperator implements Operator {
   readonly type = 'counterpoint_deliberation' as const;
@@ -16,14 +17,19 @@ export class CounterpointDeliberationOperator implements Operator {
     if (ctx.graphNode.operator.type !== 'counterpoint_deliberation') throw new Error('DELIBERATION_SPEC_REQUIRED');
     const spec = ctx.graphNode.operator;
     const started = Date.now();
-    const project = this.engine.getProject(ctx.workItem.workspaceId);
-    if (project.sourceBindings.length === 0) {
-      this.engine.addSourceBinding({
-        projectId: ctx.workItem.workspaceId,
-        type: 'text',
-        label: 'work-item',
-        text: ctx.workItem.description ?? ctx.workItem.title,
-      });
+    const sourceIds = ctx.contextView.visible.authoritySources
+      .map((ref) => parseVersionRef(ref)?.name)
+      .filter((name): name is string => Boolean(name));
+    if (sourceIds.length === 0) {
+      return {
+        status: 'failed',
+        artifactRefs: [],
+        evidenceRefs: [],
+        claimRefs: [],
+        opinionRefs: [],
+        outputs: { error: 'NO_AUTHORITY_SOURCES' },
+        usage: { timeMs: Date.now() - started },
+      };
     }
     const deliberation = this.engine.createDeliberation({
       projectId: ctx.workItem.workspaceId,
@@ -34,6 +40,7 @@ export class CounterpointDeliberationOperator implements Operator {
       rubric: { items: [{ id: 'fit', name: 'Fit', weight: 1 }], maxScore: 5 },
       deliverable: 'decision',
       workItemId: ctx.workItem.id,
+      sourceIds,
     });
     for (let index = 0; index < spec.workerCount; index++) {
       this.engine.addParticipant({ deliberationId: deliberation.id, role: 'worker', label: `Worker ${index + 1}` });
@@ -48,36 +55,55 @@ export class CounterpointDeliberationOperator implements Operator {
     const claimRefs = this.engine.getState(deliberation.id).positions.flatMap((position) =>
       position.claims.map((claim) => `claim:${claim.id}`),
     );
-    const verification = await new VerificationOperator().run({
-      ...ctx,
-      graphNode: {
-        ...ctx.graphNode,
-        operator: {
-          type: 'verification',
-          command: 'node',
-          args: ['--version'],
-          cwd: process.cwd(),
-          targetRefs: claimRefs,
+    for (const command of spec.verificationPolicy.commands) {
+      if (!command.targetKinds.includes('claims')) {
+        return {
+          status: 'failed',
+          artifactRefs: [],
+          evidenceRefs: [],
+          claimRefs: [],
+          opinionRefs: [],
+          outputs: { deliberationId: deliberation.id, error: 'UNSUPPORTED_TARGET_KIND' },
+          usage: { timeMs: Date.now() - started },
+        };
+      }
+      const verification = await new VerificationOperator().run({
+        ...ctx,
+        graphNode: {
+          ...ctx.graphNode,
+          operator: {
+            type: 'verification',
+            command: command.command,
+            args: command.args,
+            cwd: command.cwd,
+            targetRefs: claimRefs,
+          },
         },
-      },
-    });
-    if (verification.status === 'failed') {
-      return {
-        status: 'failed',
-        artifactRefs: [],
-        evidenceRefs: [],
-        claimRefs: [],
-        opinionRefs: [],
-        outputs: { deliberationId: deliberation.id, error: verification.error },
-        usage: { timeMs: Date.now() - started },
-      };
+      });
+      if (verification.status === 'failed') {
+        return {
+          status: 'failed',
+          artifactRefs: [],
+          evidenceRefs: [],
+          claimRefs: [],
+          opinionRefs: [],
+          outputs: { deliberationId: deliberation.id, error: verification.error },
+          usage: { timeMs: Date.now() - started },
+        };
+      }
+      const evidence = verification.outputs.evidence as
+        | { id: string; status: 'verified' | 'failed'; hash: string; summary: string; targetRefs: string[] }
+        | undefined;
+      if (!evidence) throw new Error('VERIFICATION_EVIDENCE_MISSING');
+      this.engine.addEvidence({
+        deliberationId: deliberation.id,
+        targetRefs: evidence.targetRefs,
+        status: evidence.status,
+        resultSummary: evidence.summary,
+        kind: 'command_result',
+        hash: evidence.hash,
+      });
     }
-    this.engine.addEvidence({
-      deliberationId: deliberation.id,
-      targetRefs: claimRefs,
-      status: 'verified',
-      resultSummary: 'node verification passed',
-    });
     this.engine.freezeEvidencePack(deliberation.id);
     await this.engine.runReview(deliberation.id);
 

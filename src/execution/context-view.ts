@@ -74,6 +74,15 @@ function allowedByPolicy(node: GraphNode, ref: string, category: RefCategory): b
   return true;
 }
 
+function artifactVisibleTo(ref: string, db: Database, node: GraphNode): boolean {
+  const parsed = parseVersionRef(ref);
+  const artifact = parsed ? db.artifacts.find((item) => item.logicalName === parsed.name) : undefined;
+  const visibility = artifact?.visibility ?? 'shared';
+  if (visibility === 'private') return false;
+  if (visibility === 'review' && node.operator.type !== 'independent_review') return false;
+  return true;
+}
+
 function ancestorsOf(nodeId: string, nodes: GraphNode[]): Set<string> {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const ancestors = new Set<string>();
@@ -102,7 +111,7 @@ export function buildNodeContextView(input: NodeContextViewInput): ContextView {
     const category = categoryOfRef(ref, db);
     if (!category || !allowedByPolicy(node, ref, category)) continue;
     if (category === 'claim') visibleClaims.add(ref.slice('claim:'.length));
-    else if (category === 'artifact') visibleArtifacts.add(ref);
+    else if (category === 'artifact' && artifactVisibleTo(ref, db, node)) visibleArtifacts.add(ref);
     else visibleEvidence.add(ref.slice('evidence:'.length));
   }
 
@@ -115,7 +124,11 @@ export function buildNodeContextView(input: NodeContextViewInput): ContextView {
     const visibility = producerVisibility.get(producerId) ?? 'shared';
     const outputs = splitRefs(refs, db);
     if (visibility === 'shared' || revealedToThisNode) {
-      for (const artifact of outputs.artifacts) if (allowedByPolicy(node, artifact, 'artifact')) visibleArtifacts.add(artifact);
+      for (const artifact of outputs.artifacts) {
+        if (allowedByPolicy(node, artifact, 'artifact') && artifactVisibleTo(artifact, db, node)) {
+          visibleArtifacts.add(artifact);
+        }
+      }
       for (const claim of outputs.claims) if (allowedByPolicy(node, `claim:${claim}`, 'claim')) visibleClaims.add(claim);
       for (const evidenceId of outputs.evidence) if (allowedByPolicy(node, `evidence:${evidenceId}`, 'evidence')) visibleEvidence.add(evidenceId);
     } else {

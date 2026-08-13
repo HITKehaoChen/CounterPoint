@@ -68,7 +68,11 @@ export class VerificationOperator implements Operator {
       evidenceRefs: [evidence.id],
       claimRefs: [],
       opinionRefs: [],
-      outputs: { evidenceId: evidence.id, exitCode },
+      outputs: {
+        evidenceId: evidence.id,
+        exitCode,
+        evidence: { id: evidence.id, status: evidence.status, hash: evidence.hash, summary, targetRefs: [...evidence.targetRefs] },
+      },
       usage: { timeMs: Date.now() - started },
       error: status === 'verified' ? undefined : summary,
     };

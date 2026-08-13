@@ -15,6 +15,16 @@ test('publish creates versioned, content-addressed artifacts', () => {
   assert.equal(registry.getVersion('design@v2')?.content, 'two');
 });
 
+test('artifact visibility cannot widen from private to shared', () => {
+  const db = emptyDatabase();
+  const registry = new ArtifactRegistry(db);
+  registry.publish({ logicalName: 'secret', type: 'text', content: 'a', visibility: 'private' });
+  assert.throws(
+    () => registry.publish({ logicalName: 'secret', type: 'text', content: 'b', visibility: 'shared' }),
+    /VISIBILITY_WIDENING_FORBIDDEN/,
+  );
+});
+
 test('version references do not drift', () => {
   const db = emptyDatabase();
   const registry = new ArtifactRegistry(db);

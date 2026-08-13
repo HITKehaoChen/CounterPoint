@@ -42,8 +42,19 @@ export const CounterpointDeliberationSpecSchema = z.object({
   workerCount: z.number().int().min(2).max(5).default(2),
   blind: z.literal(true).default(true),
   commitReveal: z.literal(true).default(true),
-  challengeRounds: z.number().int().min(0).max(3).default(1),
-  verificationPolicy: z.string().min(1),
+  challengeRounds: z.number().int().min(0).max(3).default(0),
+  verificationPolicy: z.object({
+    commands: z
+      .array(
+        z.object({
+          command: z.string().min(1),
+          args: z.array(z.string()).default([]),
+          cwd: z.string().optional(),
+          targetKinds: z.array(z.enum(['claims', 'artifacts', 'sources'])).default(['claims']),
+        }),
+      )
+      .min(1),
+  }),
   reviewerPolicy: z.string().min(1),
   humanGatePolicy: z.string().optional(),
 });
