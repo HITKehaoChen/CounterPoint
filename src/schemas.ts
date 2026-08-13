@@ -237,6 +237,14 @@ export const EvidenceSchema = z.object({
   }),
   status: EvidenceStatusSchema,
   reproducibility: z.enum(['reproducible', 'observed_once', 'unknown']).optional(),
+  scope: z
+    .object({
+      sourceVersionRefs: z.array(z.string()).default([]),
+      appliesWhen: z.array(z.string()).default([]),
+      invalidatedWhen: z.array(z.string()).optional(),
+      expiresAt: z.string().optional(),
+    })
+    .optional(),
   hash: z.string().min(1),
   createdAt: z.string(),
   supersededBy: z.string().optional(),
@@ -286,6 +294,17 @@ export const DecisionSchema = z.object({
   ownerId: z.string().min(1),
 });
 export type Decision = z.infer<typeof DecisionSchema>;
+
+export const OpinionSchema = z.object({
+  id: z.string().min(1),
+  workItemId: z.string().min(1),
+  statement: z.string().min(1),
+  rationale: z.string().min(1),
+  authorRunId: z.string().optional(),
+  author: z.string().min(1),
+  createdAt: z.string(),
+});
+export type Opinion = z.infer<typeof OpinionSchema>;
 
 export const WorkItemKindSchema = z.enum([
   'problem',
