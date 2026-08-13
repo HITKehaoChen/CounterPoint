@@ -11,9 +11,19 @@ export class IndependentReviewOperator implements Operator {
     if (!reviewer) throw new Error(`No reviewer adapter for capability "${capability}"`);
     const db = ctx.readDb();
     const targetGraphIds = ctx.graphNode.operator.targetNodeIds.map((id) => `gn_${id}`);
-    const producerRuns = db.nodeRuns.filter((run) => targetGraphIds.includes(run.graphNodeId));
+    const producerRuns = db.nodeRuns.filter(
+      (run) =>
+        targetGraphIds.includes(run.graphNodeId) &&
+        run.workItemId === ctx.workItem.id &&
+        run.planId === ctx.nodeRun.planId,
+    );
     const producerRunIds = new Set(producerRuns.map((run) => run.id));
-    const claims = db.claims.filter((claim) => claim.nodeRunId && producerRunIds.has(claim.nodeRunId));
+    const claims = db.claims.filter(
+      (claim) =>
+        claim.nodeRunId &&
+        producerRunIds.has(claim.nodeRunId) &&
+        claim.workItemId === ctx.workItem.id,
+    );
     const claimsByRun = new Map<string, typeof claims>();
     for (const claim of claims) {
       if (!claim.nodeRunId) continue;
@@ -45,7 +55,11 @@ export class IndependentReviewOperator implements Operator {
     if (candidates.length === 0) throw new Error('NO_REVIEW_CANDIDATES');
     const claimIds = new Set(claims.map((claim) => claim.id));
     const evidence = db.evidence
-      .filter((item) => item.targetRefs.some((ref) => ref.startsWith('claim:') && claimIds.has(ref.slice('claim:'.length))))
+      .filter(
+        (item) =>
+          item.workItemId === ctx.workItem.id &&
+          item.targetRefs.some((ref) => ref.startsWith('claim:') && claimIds.has(ref.slice('claim:'.length))),
+      )
       .map((item) => ({ id: item.id, kind: item.kind, targetRefs: item.targetRefs, status: item.status, resultSummary: item.result.summary }));
     const started = Date.now();
     const result = await reviewer.review({

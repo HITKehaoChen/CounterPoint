@@ -51,7 +51,7 @@ export class BudgetLedger {
   }
 
   canReserve(nodeBudget: NodeBudget): boolean {
-    if (this.totalReservedTimeMs() + this.totalSettledTimeMs + nodeBudget.maxTimeMs >= this.envelope.timeBudgetMs) {
+    if (this.totalReservedTimeMs() + this.totalSettledTimeMs + nodeBudget.maxTimeMs > this.envelope.timeBudgetMs) {
       return false;
     }
     if (this.envelope.tokenBudget !== undefined && this.totalSettledTokens >= this.envelope.tokenBudget) {
@@ -89,6 +89,10 @@ export class BudgetLedger {
 
   release(runId: string): void {
     this.reservations.delete(runId);
+  }
+
+  hasReservation(runId: string): boolean {
+    return this.reservations.has(runId);
   }
 
   canRetry(runId: string, maxRetries: number): boolean {

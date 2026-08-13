@@ -274,3 +274,46 @@ test('unsupported deliberation options need revision', () => {
   assert.ok(result.issues.some((issue) => issue.code === 'DELIBERATION_UNSUPPORTED_CHALLENGE_ROUNDS'));
   assert.ok(result.issues.some((issue) => issue.code === 'DELIBERATION_UNSUPPORTED_REVIEWER_POLICY'));
 });
+
+test('nested deliberation commands require read_only effectClass', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({
+        operator: {
+          type: 'counterpoint_deliberation',
+          workerCount: 2,
+          blind: true,
+          commitReveal: true,
+          challengeRounds: 0,
+          verificationPolicy: { commands: [{ command: 'git', args: ['status'], effectClass: 'idempotent', targetKinds: ['claims'] }] },
+          reviewerPolicy: 'anonymous-rubric',
+        },
+      }),
+    ],
+  });
+  const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
+  assert.equal(result.verdict, 'needs_revision');
+  assert.ok(result.issues.some((issue) => issue.code === 'DELIBERATION_COMMAND_NOT_READ_ONLY'));
+});
+
+test('nested deliberation commands go through the risk gate', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({
+        operator: {
+          type: 'counterpoint_deliberation',
+          workerCount: 2,
+          blind: true,
+          commitReveal: true,
+          challengeRounds: 0,
+          verificationPolicy: { commands: [{ command: 'git', args: ['push'], effectClass: 'read_only', targetKinds: ['claims'] }] },
+          reviewerPolicy: 'anonymous-rubric',
+        },
+      }),
+    ],
+  });
+  const envelope = validEnvelope({ riskPolicy: { requireHumanGateFor: ['git push'], highRiskActions: [], requireReviewFor: [] } });
+  const result = validatePlan({ plan, envelope, workItem: validWorkItem(), catalog });
+  assert.equal(result.verdict, 'needs_revision');
+  assert.ok(result.issues.some((issue) => issue.code === 'GATE_REQUIRED_MISSING'));
+});

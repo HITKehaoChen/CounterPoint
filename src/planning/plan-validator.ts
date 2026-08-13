@@ -84,6 +84,17 @@ export function finalizeVerdict(issues: ValidationIssue[]): ValidationVerdict {
 
 function operatorCommands(operator: OperatorSpec): string[] {
   if (operator.type === 'tool_task' || operator.type === 'verification') return [operator.command];
+  if (operator.type === 'counterpoint_deliberation') {
+    return operator.verificationPolicy.commands.map((command) => command.command);
+  }
+  return [];
+}
+
+function operatorCommandSpecs(operator: OperatorSpec): Array<{ command: string; args: string[] }> {
+  if (operator.type === 'tool_task' || operator.type === 'verification') return [{ command: operator.command, args: operator.args }];
+  if (operator.type === 'counterpoint_deliberation') {
+    return operator.verificationPolicy.commands.map((command) => ({ command: command.command, args: command.args }));
+  }
   return [];
 }
 
@@ -179,6 +190,16 @@ export function collectConstitutionIssues(input: ValidatePlanInput): ValidationI
           kind: 'dag',
         });
       }
+      for (const command of node.operator.verificationPolicy.commands) {
+        if (command.effectClass !== 'read_only') {
+          issues.push({
+            code: 'DELIBERATION_COMMAND_NOT_READ_ONLY',
+            path: `nodes.${node.id}.operator.verificationPolicy`,
+            message: `nested command "${command.command}" must declare effectClass "read_only"`,
+            kind: 'gate',
+          });
+        }
+      }
     }
     for (const ref of node.inputRefs) {
       const producerId = ref.split(':')[0];
@@ -228,9 +249,10 @@ export function collectConstitutionIssues(input: ValidatePlanInput): ValidationI
   }
   const gatedActions = envelope.riskPolicy.requireHumanGateFor;
   const planUsesGatedAction = plan.nodes.some((node) => {
-    if (node.operator.type !== 'tool_task' && node.operator.type !== 'verification') return false;
-    const full = `${node.operator.command} ${node.operator.args.join(' ')}`.trim();
-    return gatedActions.includes(full) || gatedActions.includes(node.operator.command);
+    return operatorCommandSpecs(node.operator).some((command) => {
+      const full = `${command.command} ${command.args.join(' ')}`.trim();
+      return gatedActions.includes(full) || gatedActions.includes(command.command);
+    });
   });
   const hasGateNode = plan.nodes.some((node) => node.operator.type === 'human_gate');
   if (planUsesGatedAction && !hasGateNode) {

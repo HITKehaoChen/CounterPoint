@@ -51,6 +51,7 @@ export const CounterpointDeliberationSpecSchema = z.object({
           args: z.array(z.string()).default([]),
           cwd: z.string().optional(),
           targetKinds: z.array(z.enum(['claims', 'artifacts', 'sources'])).default(['claims']),
+          effectClass: z.enum(['read_only', 'idempotent', 'non_idempotent']).optional(),
         }),
       )
       .min(1),

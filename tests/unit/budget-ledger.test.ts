@@ -32,7 +32,8 @@ test('ledger snapshot restores reservations and settled totals', () => {
   const restored = new BudgetLedger(validEnvelope({ timeBudgetMs: 100 }), first.snapshot());
   assert.equal(restored.snapshot().totalSettledTimeMs, 20);
   assert.equal(restored.canReserve({ maxTimeMs: 90 }), false);
-  assert.equal(restored.canReserve({ maxTimeMs: 80 }), false);
+  assert.equal(restored.canReserve({ maxTimeMs: 80 }), true);
+  assert.equal(restored.canReserve({ maxTimeMs: 81 }), false);
   assert.equal(restored.canReserve({ maxTimeMs: 79 }), true);
 });
 
@@ -69,4 +70,11 @@ test('snapshot restores retry counts', () => {
   first.reserve('nr_a', { maxTimeMs: 10 });
   const restored = new BudgetLedger(validEnvelope({ timeBudgetMs: 1000 }), first.snapshot());
   assert.equal(restored.canRetry('nr_a', 1), false);
+});
+
+test('settled cost reaching the budget blocks new reservations', () => {
+  const ledger = new BudgetLedger(validEnvelope({ timeBudgetMs: 1000, costBudget: 1 }));
+  ledger.reserve('nr_a', { maxTimeMs: 10 });
+  ledger.settle('nr_a', { timeMs: 1, costUsd: 1 });
+  assert.equal(ledger.canReserve({ maxTimeMs: 10 }), false);
 });
