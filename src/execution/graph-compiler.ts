@@ -35,6 +35,10 @@ export function compilePlan(input: CompilePlanInput): ExecutionGraph {
       failurePolicy: node.failurePolicy,
       allocatedBudget: node.allocatedBudget,
       adapterBinding,
+      effectClass:
+        node.operator.type === 'tool_task' || node.operator.type === 'verification'
+          ? node.operator.effectClass ?? 'read_only'
+          : 'read_only',
       status: isSource ? 'ready' : 'pending',
     };
   });

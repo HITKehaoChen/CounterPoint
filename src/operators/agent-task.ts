@@ -12,25 +12,28 @@ export class AgentTaskOperator implements Operator {
     const packet: TaskPacket = {
       id: newId('packet'),
       version: 1,
-      problem: ctx.graphNode.objective,
+      problem: ctx.graphNode.operator.type === 'agent_task' ? ctx.graphNode.operator.instructions : ctx.graphNode.objective,
       goals: [ctx.graphNode.objective],
       constraints: [...ctx.workItem.constraints],
       rubric: { items: [{ id: 'objective', name: 'Objective', weight: 1 }], maxScore: 5 },
       sources: [...ctx.workItem.sourceRefs],
     };
     const started = Date.now();
+    const materialized = ctx.materialize();
     const result = await adapter.run({
       runId: ctx.nodeRun.id,
       participantId: ctx.nodeRun.id,
       phase: 'node',
+      isolationMode: ctx.graphNode.contextPolicy.visibility,
       taskPacket: packet,
       contextView: ctx.contextView,
-      authoritySources: [],
-      visibleArtifacts: [],
+      authoritySources: materialized.authoritySources,
+      visibleArtifacts: materialized.visibleArtifacts,
       workspacePath: ctx.workspacePath,
     });
     const claims: Claim[] = result.position.claims.map((claim) => ({
-      id: claim.id ?? newId('claim'),
+      id: newId('claim'),
+      externalId: claim.id,
       workItemId: ctx.workItem.id,
       nodeRunId: ctx.nodeRun.id,
       statement: claim.statement,

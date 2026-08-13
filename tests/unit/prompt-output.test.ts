@@ -68,6 +68,12 @@ test('renderAgentPrompt includes the task, blind isolation and output contract',
   assert.ok(prompt.includes('src_code@v1'));
 });
 
+test('renderAgentPrompt describes shared isolation mode without claiming blind', () => {
+  const prompt = renderAgentPrompt({ ...makeInput(), isolationMode: 'shared' });
+  assert.ok(prompt.includes('SHARED mode'));
+  assert.equal(prompt.includes('BLIND isolation'), false);
+});
+
 test('extractJsonPayload handles fenced JSON', () => {
   const payload = extractJsonPayload('Here you go:\n```json\n{"a": 1}\n```\n');
   assert.deepEqual(payload, { a: 1 });

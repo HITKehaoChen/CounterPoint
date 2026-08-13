@@ -154,6 +154,7 @@ export type ClaimType = z.infer<typeof ClaimTypeSchema>;
 
 export const ClaimSchema = z.object({
   id: z.string().min(1),
+  externalId: z.string().optional(),
   positionId: z.string().optional(),
   nodeRunId: z.string().optional(),
   workItemId: z.string().optional(),

@@ -44,6 +44,7 @@ function makeCtx(overrides: Partial<OperatorContext> = {}, commit?: (batch: Oper
     emit: () => undefined,
     requestHumanGate: () => { throw new Error('unused'); },
     readDb: () => db,
+    materialize: () => ({ authoritySources: [], visibleArtifacts: [] }),
     ...overrides,
   };
 }
@@ -63,6 +64,28 @@ test('agent task commits artifacts and claims through the serialized commit call
   assert.ok(result.claimRefs.length > 0);
   assert.equal(batches.length, 1);
   assert.equal(batches[0].claims?.length, defaultWorkerAScript().claims.length);
+});
+
+test('agent task always assigns system-unique claim ids', async () => {
+  const script = () => ({
+    summary: 'x',
+    claims: [{ id: 'claim-1', statement: 'same model id', type: 'fact' as const, confidence: 0.5 }],
+    unknowns: [],
+    artifactRefs: [],
+    decisionConditions: [],
+    confidence: 0.5,
+    artifacts: [],
+    model: 'm',
+  });
+  const batches: OperatorWriteBatch[] = [];
+  const capture = (batch: OperatorWriteBatch) => {
+    batches.push(batch);
+    return [];
+  };
+  await new AgentTaskOperator().run(makeCtx({ resolveAgent: () => new MockAgentAdapter(script) }, capture));
+  await new AgentTaskOperator().run(makeCtx({ resolveAgent: () => new MockAgentAdapter(script) }, capture));
+  assert.notEqual(batches[0].claims![0].id, batches[1].claims![0].id);
+  assert.equal(batches[0].claims![0].externalId, 'claim-1');
 });
 
 test('tool task rejects a command outside the envelope allowlist', async () => {
@@ -139,6 +162,7 @@ test('deliberation facade pauses at the human gate and resumes to decided', asyn
       completionCriteria: [],
       failurePolicy: { maxRetries: 0, onFailure: 'escalate' },
       allocatedBudget: { maxTimeMs: 30_000 },
+      effectClass: 'read_only',
       status: 'running',
     },
     nodeRun,
@@ -156,6 +180,7 @@ test('deliberation facade pauses at the human gate and resumes to decided', asyn
       return input;
     },
     readDb: () => db,
+    materialize: () => ({ authoritySources: [], visibleArtifacts: [] }),
   };
   const paused = await op.run(ctx);
   assert.equal(paused.status, 'waiting_human');

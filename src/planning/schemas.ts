@@ -22,6 +22,7 @@ export const ToolTaskOperatorSpecSchema = z.object({
   command: z.string().min(1),
   args: z.array(z.string()).default([]),
   cwd: z.string().optional(),
+  effectClass: z.enum(['read_only', 'idempotent', 'non_idempotent']).optional(),
 });
 export const VerificationOperatorSpecSchema = z.object({
   type: z.literal('verification'),
@@ -29,6 +30,7 @@ export const VerificationOperatorSpecSchema = z.object({
   args: z.array(z.string()).default([]),
   cwd: z.string().optional(),
   targetRefs: z.array(z.string()).default([]),
+  effectClass: z.enum(['read_only', 'idempotent', 'non_idempotent']).optional(),
 });
 export const IndependentReviewOperatorSpecSchema = z.object({
   type: z.literal('independent_review'),

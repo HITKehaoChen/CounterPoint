@@ -26,6 +26,7 @@ export interface AgentRunInput {
   runId: string;
   participantId: string;
   phase: string;
+  isolationMode?: 'blind' | 'shared' | 'private' | 'sealed';
   taskPacket: TaskPacket;
   contextView: ContextView;
   authoritySources: VisibleAuthoritySource[];

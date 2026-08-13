@@ -1,4 +1,5 @@
 import type { CollaborationNode } from '../planning/schemas.ts';
+import type { EffectClass } from '../schemas.ts';
 
 export type GraphNodeStatus = 'pending' | 'ready' | 'running' | 'waiting_human' | 'succeeded' | 'failed' | 'cancelled' | 'skipped';
 
@@ -22,6 +23,7 @@ export interface GraphNode {
   failurePolicy: CollaborationNode['failurePolicy'];
   allocatedBudget: CollaborationNode['allocatedBudget'];
   adapterBinding?: AdapterBinding;
+  effectClass: EffectClass;
   status: GraphNodeStatus;
 }
 

@@ -9,11 +9,20 @@ import type { AgentRunInput } from './agent.ts';
 export function renderAgentPrompt(input: AgentRunInput): string {
   const packet = input.taskPacket;
   const lines: string[] = [];
-  lines.push('You are an independent Worker in a Counterpoint technical decision review.');
+  lines.push('You are a Counterpoint execution node.');
   lines.push(`Run: ${input.runId} (phase: ${input.phase})`);
   lines.push('');
-  lines.push('You are in BLIND isolation: other workers\' positions are hidden from you.');
-  lines.push('Do not assume the existence of other candidates. Produce your own independent analysis.');
+  const isolation = input.isolationMode ?? 'blind';
+  if (isolation === 'blind') {
+    lines.push('You are in BLIND isolation: other nodes\' outputs are hidden from you.');
+    lines.push('Do not assume the existence of other candidates. Produce your own independent analysis.');
+  } else if (isolation === 'shared') {
+    lines.push('You are in SHARED mode: upstream artifacts listed below are visible to you. Build on them explicitly.');
+  } else if (isolation === 'private') {
+    lines.push('You are in PRIVATE mode: your outputs will not be shared automatically with other nodes.');
+  } else {
+    lines.push('You are in SEALED mode: your outputs are sealed until explicitly revealed.');
+  }
   lines.push('');
   lines.push('## Task');
   lines.push('');
