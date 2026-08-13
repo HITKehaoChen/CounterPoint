@@ -145,7 +145,82 @@ export function collectPermissionBudgetIssues(input: ValidatePlanInput): Validat
   return issues;
 }
 
+export function collectConstitutionIssues(input: ValidatePlanInput): ValidationIssue[] {
+  const { plan, envelope, lineage, evidenceIndex } = input;
+  const issues: ValidationIssue[] = [];
+  const byId = new Map(plan.nodes.map((node) => [node.id, node]));
+  for (const node of plan.nodes) {
+    for (const ref of node.inputRefs) {
+      const producerId = ref.split(':')[0];
+      const producer = byId.get(producerId);
+      if (producer && producer.id !== node.id && ['private', 'blind', 'sealed'].includes(producer.contextPolicy.visibility)) {
+        issues.push({ code: 'CONTEXT_PRIVATE_REF', path: `nodes.${node.id}.inputRefs`, message: `ref ${ref} points at ${producer.contextPolicy.visibility} node ${producer.id}`, kind: 'context' });
+      }
+    }
+    for (const criterion of node.completionCriteria) {
+      if (criterion.kind === 'evidence' && criterion.refs.length === 0) {
+        issues.push({ code: 'EVIDENCE_CRITERION_NO_REF', path: `nodes.${node.id}.completionCriteria`, message: 'evidence criterion must reference evidence', kind: 'evidence' });
+      }
+      for (const ref of criterion.refs) {
+        if (evidenceIndex && ref.startsWith('evidence:') && evidenceIndex.get(ref) === 'unknown') {
+          issues.push({ code: 'EVIDENCE_REF_UNRESOLVED', path: `nodes.${node.id}.completionCriteria`, message: `evidence ref unresolved: ${ref}`, kind: 'evidence' });
+        }
+      }
+    }
+  }
+  const blindNodes = plan.nodes.filter((node) => node.contextPolicy.visibility === 'blind');
+  for (let i = 0; i < blindNodes.length; i++) {
+    for (let j = i + 1; j < blindNodes.length; j++) {
+      const shared = blindNodes[i].inputRefs.filter((ref) => blindNodes[j].inputRefs.includes(ref));
+      if (shared.length) {
+        issues.push({ code: 'CONTEXT_BLIND_SHARED_INPUT', path: 'nodes', message: `blind nodes ${blindNodes[i].id}/${blindNodes[j].id} share inputs: ${shared.join(', ')}`, kind: 'context' });
+      }
+    }
+  }
+  for (const node of plan.nodes) {
+    if (node.operator.type !== 'independent_review') continue;
+    for (const targetId of node.operator.targetNodeIds) {
+      const target = byId.get(targetId);
+      if (!target) continue;
+      const overlap = target.capabilityRequirements.filter((capability) => node.capabilityRequirements.includes(capability));
+      if (overlap.length) {
+        issues.push({ code: 'INDEPENDENCE_CAPABILITY_OVERLAP', path: `nodes.${node.id}`, message: `reviewer shares capabilities with target ${targetId}: ${overlap.join(', ')}`, kind: 'independence' });
+      }
+      if (lineage) {
+        const reviewerLineage = lineage[node.id]?.fingerprints ?? [];
+        const targetLineage = lineage[targetId]?.fingerprints ?? [];
+        const conflict = reviewerLineage.some((fingerprint) => targetLineage.includes(fingerprint));
+        if (conflict) {
+          issues.push({ code: 'INDEPENDENCE_LINEAGE_CONFLICT', path: `nodes.${node.id}`, message: `reviewer lineage conflicts with target ${targetId}`, kind: 'independence' });
+        }
+      }
+    }
+  }
+  const gatedActions = envelope.riskPolicy.requireHumanGateFor;
+  const planUsesGatedAction = plan.nodes.some((node) => {
+    if (node.operator.type !== 'tool_task' && node.operator.type !== 'verification') return false;
+    const full = `${node.operator.command} ${node.operator.args.join(' ')}`.trim();
+    return gatedActions.includes(full) || gatedActions.includes(node.operator.command);
+  });
+  const hasGateNode = plan.nodes.some((node) => node.operator.type === 'human_gate');
+  if (planUsesGatedAction && !hasGateNode) {
+    issues.push({ code: 'GATE_REQUIRED_MISSING', path: 'nodes', message: 'plan uses a gated action but has no human_gate node', kind: 'gate' });
+  }
+  for (const stopCondition of plan.stopConditions) {
+    for (const ref of stopCondition.refs) {
+      if (evidenceIndex && ref.startsWith('evidence:') && evidenceIndex.get(ref) === 'unknown') {
+        issues.push({ code: 'GATE_STOP_REF_UNRESOLVED', path: 'stopConditions', message: `stop condition ref unresolved: ${ref}`, kind: 'gate' });
+      }
+    }
+  }
+  return issues;
+}
+
 export function validatePlan(input: ValidatePlanInput): ValidationResult {
-  const issues = [...collectStructureIssues(input), ...collectPermissionBudgetIssues(input)];
+  const issues = [
+    ...collectStructureIssues(input),
+    ...collectPermissionBudgetIssues(input),
+    ...collectConstitutionIssues(input),
+  ];
   return { verdict: finalizeVerdict(issues), issues };
 }

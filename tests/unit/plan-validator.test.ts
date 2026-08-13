@@ -98,3 +98,93 @@ test('retries beyond rounds require human approval', () => {
   assert.equal(result.verdict, 'needs_human_approval');
   assert.ok(result.issues.some((issue) => issue.code === 'BUDGET_RETRY_OVER_ROUNDS'));
 });
+
+test('private object referenced by another node needs revision', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({ id: 'secret', contextPolicy: { visibility: 'private', readScopes: [], writeScopes: [], includeObjectTypes: [], excludeObjectTypes: [] } }),
+      makeNode({ id: 'consumer', dependsOn: ['secret'], inputRefs: ['secret:notes'] }),
+    ],
+  });
+  const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
+  assert.equal(result.verdict, 'needs_revision');
+  assert.ok(result.issues.some((issue) => issue.code === 'CONTEXT_PRIVATE_REF'));
+});
+
+test('two blind nodes sharing input need revision', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({ id: 'blind-a', contextPolicy: { visibility: 'blind', readScopes: [], writeScopes: [], includeObjectTypes: [], excludeObjectTypes: [] }, inputRefs: ['src_inventory@v1'] }),
+      makeNode({ id: 'blind-b', contextPolicy: { visibility: 'blind', readScopes: [], writeScopes: [], includeObjectTypes: [], excludeObjectTypes: [] }, inputRefs: ['src_inventory@v1'] }),
+    ],
+  });
+  const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
+  assert.equal(result.verdict, 'needs_revision');
+  assert.ok(result.issues.some((issue) => issue.code === 'CONTEXT_BLIND_SHARED_INPUT'));
+});
+
+test('reviewer sharing capabilities with its target needs revision', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({ id: 'candidate', capabilityRequirements: ['code-analysis'] }),
+      makeNode({
+        id: 'review',
+        dependsOn: ['candidate'],
+        capabilityRequirements: ['code-analysis'],
+        operator: { type: 'independent_review', rubricRef: 'rubric:1', targetNodeIds: ['candidate'] },
+      }),
+    ],
+  });
+  const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
+  assert.equal(result.verdict, 'needs_revision');
+  assert.ok(result.issues.some((issue) => issue.code === 'INDEPENDENCE_CAPABILITY_OVERLAP'));
+});
+
+test('lineage conflict between reviewer and target is caught', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({ id: 'candidate', capabilityRequirements: ['code-analysis'] }),
+      makeNode({
+        id: 'review',
+        dependsOn: ['candidate'],
+        capabilityRequirements: ['independent-review'],
+        operator: { type: 'independent_review', rubricRef: 'rubric:1', targetNodeIds: ['candidate'] },
+      }),
+    ],
+  });
+  const result = validatePlan({
+    plan,
+    envelope: validEnvelope(),
+    workItem: validWorkItem(),
+    catalog,
+    lineage: {
+      review: { authorRunIds: [], fingerprints: ['adapter-cli/model-a'], contextViewHashes: [] },
+      candidate: { authorRunIds: [], fingerprints: ['adapter-cli/model-a'], contextViewHashes: [] },
+    },
+  });
+  assert.equal(result.verdict, 'needs_revision');
+  assert.ok(result.issues.some((issue) => issue.code === 'INDEPENDENCE_LINEAGE_CONFLICT'));
+});
+
+test('evidence completion without refs needs revision', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({
+        completionCriteria: [{ id: 'c1', kind: 'evidence', description: 'verified root cause', refs: [] }],
+      }),
+    ],
+  });
+  const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
+  assert.equal(result.verdict, 'needs_revision');
+  assert.ok(result.issues.some((issue) => issue.code === 'EVIDENCE_CRITERION_NO_REF'));
+});
+
+test('high risk action without a human gate node needs revision', () => {
+  const plan = validPlan({
+    nodes: [makeNode({ operator: { type: 'tool_task', command: 'git', args: ['push'] }, capabilityRequirements: ['verification'] })],
+  });
+  const envelope = validEnvelope({ riskPolicy: { requireHumanGateFor: ['git push'], highRiskActions: [], requireReviewFor: [] } });
+  const result = validatePlan({ plan, envelope, workItem: validWorkItem(), catalog });
+  assert.equal(result.verdict, 'needs_revision');
+  assert.ok(result.issues.some((issue) => issue.code === 'GATE_REQUIRED_MISSING'));
+});
