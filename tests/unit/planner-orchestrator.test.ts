@@ -106,6 +106,35 @@ test('orchestrator records per-attempt cost details', async () => {
   assert.equal(proposal.totalCostUsd, 0.6);
 });
 
+test('parse-error attempts keep their cost in attemptsDetail', async () => {
+  let calls = 0;
+  const planner: Planner = {
+    name: 'parse-costed-planner',
+    async plan(): Promise<PlannerResult> {
+      calls += 1;
+      if (calls === 1) {
+        throw new PlannerParseError(
+          [{ code: 'invalid_enum_value', path: 'nodes.0.contextPolicy.visibility', message: 'invalid' }],
+          { costUsd: 0.1, model: 'm1', usage: { inputTokens: 20, outputTokens: 5 } },
+        );
+      }
+      return { plan: validPlan(), meta: { costUsd: 0.2, model: 'm2' } };
+    },
+  };
+  const orchestrator = new PlannerOrchestrator({ planner, validator: validatePlan, maxRepairAttempts: 2 });
+  const proposal = await orchestrator.propose(baseInput());
+  assert.equal(proposal.result.verdict, 'accepted');
+  assert.deepEqual(
+    proposal.attemptsDetail.map((item) => ({ attempt: item.attempt, costUsd: item.costUsd, outcome: item.outcome })),
+    [
+      { attempt: 1, costUsd: 0.1, outcome: 'parse_error' },
+      { attempt: 2, costUsd: 0.2, outcome: 'parsed' },
+    ],
+  );
+  assert.equal(proposal.attemptsDetail[0].inputTokens, 20);
+  assert.ok(Math.abs(proposal.totalCostUsd - 0.3) < 1e-9);
+});
+
 function badNode() {
   return makeNode({
     completionCriteria: [{ id: 'c1', kind: 'evidence', description: 'needs evidence', refs: [] }],

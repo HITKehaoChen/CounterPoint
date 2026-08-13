@@ -8,6 +8,7 @@ import {
   topologySignature,
 } from '../../apps/cli/planner-fixtures.ts';
 import { makeNode, validPlan } from '../helpers/plan-fixtures.ts';
+import { strictGate } from '../../apps/cli/planner-probe.ts';
 
 test('probe fixtures cover simple and complex bug shapes', () => {
   assert.deepEqual(PROBE_FIXTURES.map((fixture) => fixture.id), ['simple-bug', 'complex-bug']);
@@ -55,4 +56,56 @@ test('complex topology assertion requires parallelism and review', () => {
 test('plan width counts parallel source nodes', () => {
   const plan = validPlan({ nodes: [makeNode({ id: 'a' }), makeNode({ id: 'b' }), makeNode({ id: 'c', dependsOn: ['a', 'b'] })] });
   assert.equal(planWidth(plan), 2);
+});
+
+test('simple topology rejects an extra independent review', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({ id: 'candidate' }),
+      makeNode({
+        id: 'review',
+        dependsOn: ['candidate'],
+        capabilityRequirements: ['independent-review'],
+        operator: { type: 'independent_review', rubricRef: 'rubric:1', targetNodeIds: ['candidate'] },
+      }),
+    ],
+  });
+  assert.ok(assertPlanTopology(plan, PROBE_FIXTURES[0].topology).some((item) => item.includes('independent_review forbidden')));
+});
+
+test('simple topology rejects a deliberation node', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({
+        operator: {
+          type: 'counterpoint_deliberation',
+          workerCount: 2,
+          blind: true,
+          commitReveal: true,
+          challengeRounds: 0,
+          verificationPolicy: 'version',
+          reviewerPolicy: 'mock',
+        },
+      }),
+    ],
+  });
+  assert.ok(assertPlanTopology(plan, PROBE_FIXTURES[0].topology).some((item) => item.includes('counterpoint_deliberation forbidden')));
+});
+
+test('simple topology rejects a converging node', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({ id: 'a' }),
+      makeNode({ id: 'b' }),
+      makeNode({ id: 'c', dependsOn: ['a', 'b'] }),
+    ],
+  });
+  assert.ok(assertPlanTopology(plan, PROBE_FIXTURES[0].topology).some((item) => item.includes('converging node forbidden')));
+});
+
+test('strict gate requires a fresh unfiltered full run', () => {
+  assert.equal(strictGate({ fresh: true, fixtureFilter: [], plannerFilter: [], results: [{ fixture: 'simple-bug', planner: 'chrys', verdict: 'accepted', attempts: 1, issueCodes: [], topology: '' }], semanticPassed: true }), true);
+  assert.equal(strictGate({ fresh: false, fixtureFilter: [], plannerFilter: [], results: [{ fixture: 'simple-bug', planner: 'chrys', verdict: 'accepted', attempts: 1, issueCodes: [], topology: '' }], semanticPassed: true }), false);
+  assert.equal(strictGate({ fresh: true, fixtureFilter: ['complex-bug'], plannerFilter: [], results: [], semanticPassed: true }), false);
+  assert.equal(strictGate({ fresh: true, fixtureFilter: [], plannerFilter: [], results: [{ fixture: 'simple-bug', planner: 'chrys', verdict: 'accepted', attempts: 1, issueCodes: [], topology: '', resumed: true }], semanticPassed: true }), false);
 });

@@ -67,6 +67,13 @@ export class CliPlannerAdapter implements Planner {
           path: issue.path.join('.'),
           message: issue.message,
         })),
+        {
+          costUsd: meta.costUsd,
+          durationMs: meta.durationMs,
+          model: meta.model ?? this.config.model,
+          provider: meta.provider ?? this.config.provider,
+          usage: meta.usage,
+        },
       );
     }
     return {

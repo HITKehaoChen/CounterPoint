@@ -10,6 +10,7 @@ import { CliPlannerAdapter } from '../../src/planning/cli-planner.ts';
 import { PLANNER_PROMPT_VERSION } from '../../src/planning/planner-prompt.ts';
 import { VALIDATOR_VERSION } from '../../src/planning/plan-validator.ts';
 import { SCHEMA_VERSION } from '../../src/schemas.ts';
+import type { PlannerAttemptDetail } from '../../src/planning/planner.ts';
 import { PROBE_FIXTURES, assertPlanTopology, topologySignature } from './planner-fixtures.ts';
 
 export const HELP_TEXT = [
@@ -55,6 +56,23 @@ interface FixtureResult {
   resumed?: boolean;
   originalRunId?: string;
   topologyViolations?: string[];
+  attemptsDetail?: PlannerAttemptDetail[];
+}
+
+export function strictGate(input: {
+  fresh: boolean;
+  fixtureFilter: string[];
+  plannerFilter: string[];
+  results: FixtureResult[];
+  semanticPassed: boolean;
+}): boolean {
+  return (
+    input.fresh &&
+    input.fixtureFilter.length === 0 &&
+    input.plannerFilter.length === 0 &&
+    input.results.every((row) => row.resumed !== true) &&
+    input.semanticPassed
+  );
 }
 
 function loadResumedResults(options: { fresh: boolean }): FixtureResult[] {
@@ -187,6 +205,7 @@ async function main(): Promise<void> {
           model: proposal.attemptsDetail[proposal.attemptsDetail.length - 1]?.model,
           durationMs: Date.now() - startedAt,
           topologyViolations,
+          attemptsDetail: proposal.attemptsDetail,
         });
         console.log(
           `[probe] done ${fixture.id}/${planner.name} verdict=${proposal.result.verdict} attempts=${proposal.attempts} elapsed=${Date.now() - startedAt}ms spent=$ ${spentUsd.toFixed(4)}`,
@@ -222,6 +241,19 @@ async function main(): Promise<void> {
   const cumulativeCostUsd = Number(
     (results.reduce((sum, row) => sum + (row.costUsd ?? 0), 0)).toFixed(6),
   );
+  const strict = process.argv.includes('--strict');
+  const allCombos = PROBE_FIXTURES.filter((item) => fixtureFilter.length === 0 || fixtureFilter.includes(item.id))
+    .flatMap((fixture) =>
+      planners
+        .filter((item) => plannerFilter.length === 0 || plannerFilter.includes(item.name))
+        .map((planner) => ({ fixture, planner })),
+    );
+  const semanticPassed = allCombos.every(({ fixture, planner }) => {
+    const row = results.find((item) => item.fixture === fixture.id && item.planner === planner.name);
+    return Boolean(row && row.verdict === 'accepted' && Array.isArray(row.topologyViolations) && row.topologyViolations.length === 0);
+  });
+  const isFreshFullRun = strictGate({ fresh, fixtureFilter, plannerFilter, results, semanticPassed });
+  const passed = isFreshFullRun;
   const report = {
     formatVersion: 'planner-probe/0.1.0',
     generatedAt: new Date().toISOString(),
@@ -236,6 +268,7 @@ async function main(): Promise<void> {
     cumulativeCostUsd,
     budgetExceeded,
     timeBudgetExceeded,
+    isFreshFullRun,
     results,
     acceptance,
     diversity: Object.fromEntries(diversityByPlanner),
@@ -245,18 +278,6 @@ async function main(): Promise<void> {
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, `probe-report-${stamp}.json`), JSON.stringify(report, null, 2), 'utf8');
   console.log(JSON.stringify(report, null, 2));
-
-  const strict = process.argv.includes('--strict');
-  const allCombos = PROBE_FIXTURES.filter((item) => fixtureFilter.length === 0 || fixtureFilter.includes(item.id))
-    .flatMap((fixture) =>
-      planners
-        .filter((item) => plannerFilter.length === 0 || plannerFilter.includes(item.name))
-        .map((planner) => ({ fixture, planner })),
-    );
-  const passed = allCombos.every(({ fixture, planner }) => {
-    const row = results.find((item) => item.fixture === fixture.id && item.planner === planner.name);
-    return Boolean(row && row.verdict === 'accepted' && Array.isArray(row.topologyViolations) && row.topologyViolations.length === 0);
-  });
   if (strict && !passed) process.exitCode = 1;
 }
 

@@ -53,12 +53,25 @@ export interface PlannerParseIssue {
 
 export class PlannerParseError extends Error {
   readonly issues: PlannerParseIssue[];
+  readonly meta: PlannerRunMeta;
 
-  constructor(issues: PlannerParseIssue[]) {
+  constructor(issues: PlannerParseIssue[], meta: PlannerRunMeta = {}) {
     super(`Planner output failed schema validation: ${issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')}`);
     this.name = 'PlannerParseError';
     this.issues = issues;
+    this.meta = meta;
   }
+}
+
+export interface PlannerAttemptDetail {
+  attempt: number;
+  costUsd: number;
+  durationMs?: number;
+  model?: string;
+  provider?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  outcome: 'parsed' | 'parse_error' | 'runtime_error';
 }
 
 export interface PlannerOrchestratorOptions {
@@ -73,15 +86,7 @@ export interface ProposeResult {
   attempts: number;
   repairHistory: ValidationIssue[][];
   totalCostUsd: number;
-  attemptsDetail: Array<{
-    attempt: number;
-    costUsd: number;
-    durationMs?: number;
-    model?: string;
-    provider?: string;
-    inputTokens?: number;
-    outputTokens?: number;
-  }>;
+  attemptsDetail: PlannerAttemptDetail[];
 }
 
 export class PlannerOrchestrator {
@@ -101,7 +106,7 @@ export class PlannerOrchestrator {
     let result: ValidationResult = { verdict: 'needs_revision', issues: [] };
     let totalCostUsd = 0;
     let attempts = 0;
-    const attemptsDetail: ProposeResult['attemptsDetail'] = [];
+    const attemptsDetail: PlannerAttemptDetail[] = [];
     let repairContext: PlannerInput['repairContext'];
     for (let attempt = 0; attempt <= this.maxRepairAttempts; attempt++) {
       attempts += 1;
@@ -110,7 +115,21 @@ export class PlannerOrchestrator {
       try {
         proposal = await this.planner.plan(plannerInput);
       } catch (error) {
-        if (!(error instanceof PlannerParseError)) throw error;
+        if (!(error instanceof PlannerParseError)) {
+          attemptsDetail.push({ attempt: attempts, costUsd: 0, outcome: 'runtime_error' });
+          throw error;
+        }
+        totalCostUsd += error.meta.costUsd ?? 0;
+        attemptsDetail.push({
+          attempt: attempts,
+          costUsd: error.meta.costUsd ?? 0,
+          durationMs: error.meta.durationMs,
+          model: error.meta.model,
+          provider: error.meta.provider,
+          inputTokens: error.meta.usage?.inputTokens,
+          outputTokens: error.meta.usage?.outputTokens,
+          outcome: 'parse_error',
+        });
         const issues: ValidationIssue[] = error.issues.map((issue) => ({
           code: `PARSE_${issue.code}`.toUpperCase(),
           path: issue.path,
@@ -132,6 +151,7 @@ export class PlannerOrchestrator {
         provider: proposal.meta.provider,
         inputTokens: proposal.meta.usage?.inputTokens,
         outputTokens: proposal.meta.usage?.outputTokens,
+        outcome: 'parsed',
       });
       plan = proposal.plan;
       result = this.validator({ plan, envelope: input.envelope, workItem: input.workItem, catalog: input.catalog });

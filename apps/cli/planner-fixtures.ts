@@ -136,6 +136,9 @@ export function assertPlanTopology(plan: CollaborationPlan, requirement: Topolog
   }
   if (requirement.hasIndependentReview && reviews < 1) violations.push('independent_review missing');
   if (requirement.hasDeliberation && deliberations < 1) violations.push('counterpoint_deliberation missing');
+  if (!requirement.hasIndependentReview && reviews > 0) violations.push(`independent_review forbidden, got ${reviews}`);
+  if (!requirement.hasDeliberation && deliberations > 0) violations.push(`counterpoint_deliberation forbidden, got ${deliberations}`);
   if (requirement.hasConvergingNode && !hasConvergingNode(plan)) violations.push('no converging node (needs a node with >= 2 dependencies)');
+  if (!requirement.hasConvergingNode && hasConvergingNode(plan)) violations.push('converging node forbidden');
   return violations;
 }
