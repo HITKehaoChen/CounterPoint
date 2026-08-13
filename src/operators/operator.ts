@@ -1,0 +1,60 @@
+import type { AgentAdapter } from '../adapters/agent.ts';
+import type { ReviewerAdapter } from '../adapters/reviewer.ts';
+import type { PublishArtifactInput } from '../artifact-registry.ts';
+import type { AutonomyEnvelope } from '../autonomy/autonomy-envelope.ts';
+import type { HumanGateRequest } from '../autonomy/human-gate.ts';
+import type { BudgetLedger, BudgetUsage } from '../execution/budget-ledger.ts';
+import type { GraphNode } from '../execution/execution-graph.ts';
+import type { NewEvent } from '../events.ts';
+import type { OperatorSpec } from '../planning/schemas.ts';
+import type { Claim, ContextView, Database, Evidence, NodeRun, WorkItem } from '../schemas.ts';
+import { AgentTaskOperator } from './agent-task.ts';
+import { ToolTaskOperator } from './tool-task.ts';
+
+export interface OperatorWriteBatch {
+  artifacts?: PublishArtifactInput[];
+  claims?: Claim[];
+  evidence?: Evidence[];
+}
+
+export interface OperatorContext {
+  graphNode: GraphNode;
+  nodeRun: NodeRun;
+  workItem: WorkItem;
+  contextView: ContextView;
+  workspacePath: string;
+  envelope: AutonomyEnvelope;
+  resolveAgent(capability: string): AgentAdapter | undefined;
+  resolveReviewer(capability: string): ReviewerAdapter | undefined;
+  /** Scheduler-provided, serialized write path. Returns published artifact refs. */
+  commit(batch: OperatorWriteBatch): string[];
+  ledger: BudgetLedger;
+  emit(event: NewEvent): void;
+  requestHumanGate(input: HumanGateRequest): HumanGateRequest;
+  readDb(): Readonly<Database>;
+}
+
+export interface OperatorResult {
+  status: 'succeeded' | 'failed' | 'waiting_human';
+  artifactRefs: string[];
+  evidenceRefs: string[];
+  claimRefs: string[];
+  opinionRefs: string[];
+  outputs: Record<string, unknown>;
+  usage?: BudgetUsage;
+  error?: string;
+}
+
+export interface Operator {
+  readonly type: OperatorSpec['type'];
+  run(ctx: OperatorContext): Promise<OperatorResult>;
+}
+
+export type OperatorRegistry = Map<OperatorSpec['type'], Operator>;
+
+export function createOperatorRegistry(): OperatorRegistry {
+  return new Map<OperatorSpec['type'], Operator>([
+    ['agent_task', new AgentTaskOperator()],
+    ['tool_task', new ToolTaskOperator()],
+  ]);
+}
