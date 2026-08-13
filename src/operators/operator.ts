@@ -12,6 +12,8 @@ import { AgentTaskOperator } from './agent-task.ts';
 import { ToolTaskOperator } from './tool-task.ts';
 import { VerificationOperator } from './verification.ts';
 import { IndependentReviewOperator } from './independent-review.ts';
+import { CounterpointDeliberationOperator } from './counterpoint-deliberation.ts';
+import type { ProtocolEngine } from '../protocol-engine.ts';
 
 export interface OperatorWriteBatch {
   artifacts?: PublishArtifactInput[];
@@ -54,11 +56,12 @@ export interface Operator {
 
 export type OperatorRegistry = Map<OperatorSpec['type'], Operator>;
 
-export function createOperatorRegistry(): OperatorRegistry {
+export function createOperatorRegistry(deps: { engine?: ProtocolEngine } = {}): OperatorRegistry {
   return new Map<OperatorSpec['type'], Operator>([
     ['agent_task', new AgentTaskOperator()],
     ['tool_task', new ToolTaskOperator()],
     ['verification', new VerificationOperator()],
     ['independent_review', new IndependentReviewOperator()],
+    ['counterpoint_deliberation', new CounterpointDeliberationOperator(deps.engine as ProtocolEngine)],
   ]);
 }

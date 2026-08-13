@@ -5,6 +5,10 @@ import { ToolTaskOperator } from '../../src/operators/tool-task.ts';
 import { VerificationOperator } from '../../src/operators/verification.ts';
 import { IndependentReviewOperator } from '../../src/operators/independent-review.ts';
 import { MockReviewerAdapter } from '../../src/adapters/mock-reviewer.ts';
+import { CounterpointDeliberationOperator } from '../../src/operators/counterpoint-deliberation.ts';
+import { ProtocolEngine } from '../../src/protocol-engine.ts';
+import { InMemoryStore } from '../../src/store.ts';
+import type { HumanGateRequest } from '../../src/autonomy/human-gate.ts';
 import type { OperatorContext, OperatorWriteBatch } from '../../src/operators/operator.ts';
 import { MockAgentAdapter } from '../../src/adapters/mock-agent.ts';
 import { defaultWorkerAScript } from '../helpers.ts';
@@ -99,4 +103,63 @@ test('independent review stores a verdict in outputs, not a decision', async () 
   assert.equal(result.status, 'succeeded');
   assert.equal((result.outputs as { review?: { recommendation: string } }).review?.recommendation, 'candidate_a');
   assert.equal(db.decisionRecords.length, 0);
+});
+
+test('deliberation facade pauses at the human gate and resumes to decided', async () => {
+  const store = new InMemoryStore();
+  const engine = new ProtocolEngine({
+    store,
+    seed: 'facade-test',
+    workspaceRoot: 'C:/tmp/facade-test',
+    resolveAdapter: (participant) =>
+      participant.role === 'worker'
+        ? new MockAgentAdapter(defaultWorkerAScript)
+        : participant.role === 'reviewer'
+          ? new MockReviewerAdapter({ recommendation: 'candidate_a', evidenceSufficiency: 'partial' })
+          : undefined,
+  });
+  const project = engine.createProject({ name: 'Facade' });
+  const workItem = engine.createWorkItem({ workspaceId: project.id, kind: 'decision', title: 'transport choice' });
+  const db = engine.deliberationDatabase;
+  const nodeRun = NodeRunSchema.parse({ id: 'nr_delib', workItemId: workItem.id, planId: 'plan_1', planVersion: 1, graphNodeId: 'gn_delib', role: 'Deliberation', operatorType: 'counterpoint_deliberation', status: 'running' });
+  const gates: HumanGateRequest[] = [];
+  const op = new CounterpointDeliberationOperator(engine);
+  const ctx: OperatorContext = {
+    graphNode: {
+      id: 'gn_delib',
+      planNodeId: 'delib',
+      role: 'Deliberation',
+      objective: 'choose transport',
+      dependsOn: [],
+      inputRefs: [],
+      contextPolicy: { visibility: 'blind', readScopes: [], writeScopes: [], includeObjectTypes: [], excludeObjectTypes: [] },
+      operator: { type: 'counterpoint_deliberation', workerCount: 2, blind: true, commitReveal: true, challengeRounds: 0, verificationPolicy: 'version', reviewerPolicy: 'mock', humanGatePolicy: 'always' },
+      capabilityRequirements: [],
+      completionCriteria: [],
+      failurePolicy: { maxRetries: 0, onFailure: 'escalate' },
+      allocatedBudget: { maxTimeMs: 30_000 },
+      status: 'running',
+    },
+    nodeRun,
+    workItem,
+    contextView: { id: 'c', runId: 'nr_delib', phase: 'node', visible: { authoritySources: [], artifacts: [], claims: [], evidence: [] }, hidden: { agentRuns: [], objectTypes: [] }, tools: { allow: [], deny: [] }, hash: 'h' },
+    workspacePath: 'C:/tmp/facade-test',
+    envelope: defaultAutonomyEnvelope(project.id),
+    resolveAgent: () => new MockAgentAdapter(defaultWorkerAScript),
+    resolveReviewer: () => new MockReviewerAdapter({}),
+    commit: () => [],
+    ledger: new BudgetLedger(defaultAutonomyEnvelope(project.id)),
+    emit: () => undefined,
+    requestHumanGate: (input) => {
+      gates.push(input);
+      return input;
+    },
+    readDb: () => db,
+  };
+  const paused = await op.run(ctx);
+  assert.equal(paused.status, 'waiting_human');
+  assert.equal(gates.length, 1);
+  const finished = await op.resume(ctx, gates[0], 'approve_once');
+  assert.equal(finished.status, 'succeeded');
+  assert.equal(db.deliberations[0].state, 'decided');
 });
