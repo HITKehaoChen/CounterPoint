@@ -35,6 +35,16 @@ export function renderPlannerPrompt(input: PlannerInput): string {
   lines.push('## Node contract');
   lines.push('Each node needs: id, role, objective, dependsOn[], inputRefs[], contextPolicy { readScopes[], writeScopes[], visibility, includeObjectTypes[], excludeObjectTypes[] }, capabilityRequirements[], operator, completionCriteria[{id,kind,description,refs}], failurePolicy { maxRetries, onFailure }, allocatedBudget { maxTimeMs }.');
   lines.push('Blind nodes must not share inputRefs with each other. Reviewers must not share capabilities with nodes they review. Evidence completion criteria must carry refs.');
+  lines.push('');
+  lines.push('## Exact enum values (no synonyms allowed)');
+  lines.push('- contextPolicy.visibility: shared | private | blind | sealed');
+  lines.push('- failurePolicy.onFailure: fail_node | cancel_pending_children | escalate');
+  lines.push('- completionCriteria.kind: evidence | artifact | human_acceptance | claim_supported');
+  lines.push('- stopConditions.kind: evidence | artifact | decision | budget_exhausted | human_acceptance');
+  lines.push('- stopConditions.targetOutcome: resolved | partially_resolved | needs_evidence | blocked | rejected | escalated');
+  lines.push('');
+  lines.push('## Required top-level fields (no defaults exist for these)');
+  lines.push('id, workItemId, goal, rationale, nodes, stopConditions, budgetAllocation { maxTotalTimeMs, maxTotalAgents, maxTotalRounds }, createdByRunId.');
   if (input.sources.length) {
     lines.push('');
     lines.push('## Sources');

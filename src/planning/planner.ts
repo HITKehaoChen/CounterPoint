@@ -24,7 +24,7 @@ export interface PlannerInput {
   catalog: CapabilityCatalog;
   sources: SourceSummary[];
   reusableEvidence: EvidenceSummary[];
-  repairContext?: { issues: ValidationIssue[]; previousPlan: CollaborationPlan };
+  repairContext?: { issues: ValidationIssue[]; previousPlan?: CollaborationPlan };
 }
 
 export interface PlannerRunMeta {
@@ -43,6 +43,22 @@ export interface PlannerResult {
 export interface Planner {
   readonly name: string;
   plan(input: PlannerInput): Promise<PlannerResult>;
+}
+
+export interface PlannerParseIssue {
+  code: string;
+  path: string;
+  message: string;
+}
+
+export class PlannerParseError extends Error {
+  readonly issues: PlannerParseIssue[];
+
+  constructor(issues: PlannerParseIssue[]) {
+    super(`Planner output failed schema validation: ${issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')}`);
+    this.name = 'PlannerParseError';
+    this.issues = issues;
+  }
 }
 
 export interface PlannerOrchestratorOptions {
@@ -76,18 +92,33 @@ export class PlannerOrchestrator {
     let result: ValidationResult = { verdict: 'needs_revision', issues: [] };
     let totalCostUsd = 0;
     let attempts = 0;
+    let repairContext: PlannerInput['repairContext'];
     for (let attempt = 0; attempt <= this.maxRepairAttempts; attempt++) {
       attempts += 1;
-      const plannerInput: PlannerInput =
-        plan && result.issues.length
-          ? { ...input, repairContext: { issues: result.issues, previousPlan: plan } }
-          : input;
-      const proposal = await this.planner.plan(plannerInput);
+      const plannerInput: PlannerInput = repairContext ? { ...input, repairContext } : input;
+      let proposal;
+      try {
+        proposal = await this.planner.plan(plannerInput);
+      } catch (error) {
+        if (!(error instanceof PlannerParseError)) throw error;
+        const issues: ValidationIssue[] = error.issues.map((issue) => ({
+          code: `PARSE_${issue.code}`.toUpperCase(),
+          path: issue.path,
+          message: issue.message,
+          kind: 'schema',
+        }));
+        result = { verdict: 'rejected', issues };
+        repairHistory.push(issues);
+        repairContext = { issues, previousPlan: plan };
+        if (attempt < this.maxRepairAttempts) continue;
+        break;
+      }
       totalCostUsd += proposal.meta.costUsd ?? 0;
       plan = proposal.plan;
       result = this.validator({ plan, envelope: input.envelope, workItem: input.workItem, catalog: input.catalog });
       if (result.verdict !== 'needs_revision') break;
       repairHistory.push(result.issues);
+      repairContext = { issues: result.issues, previousPlan: plan };
     }
     return { plan, result, attempts, repairHistory, totalCostUsd };
   }

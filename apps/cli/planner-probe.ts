@@ -22,6 +22,7 @@ const catalog = catalogFromEntries([
 
 interface PlannerEntry {
   name: string;
+  workspaceDir: string;
   adapter: CliPlannerAdapter;
 }
 
@@ -43,6 +44,7 @@ async function main(): Promise<void> {
   const planners: PlannerEntry[] = [
     {
       name: 'chrys',
+      workspaceDir: join(workspaceRoot, 'chrys'),
       adapter: new CliPlannerAdapter({
         command: chrysBin,
         args: ['run', '-a', 'Code', '--json', '-t', '{promptFile}', '-C', '{workspace}'],
@@ -56,6 +58,7 @@ async function main(): Promise<void> {
     },
     {
       name: 'claude-code',
+      workspaceDir: join(workspaceRoot, 'claude-code'),
       adapter: new CliPlannerAdapter({
         command: claudeBin,
         args: ['-p', '--output-format', 'json', '--dangerously-skip-permissions', '--model', claudeModel],
@@ -64,7 +67,7 @@ async function main(): Promise<void> {
         timeoutMs: 600_000,
         model: claudeModel,
         provider: 'claude-code/anthropic-deepseek',
-        workspacePath: join(workspaceRoot, 'claude'),
+        workspacePath: join(workspaceRoot, 'claude-code'),
       }),
     },
   ];
@@ -107,7 +110,7 @@ async function main(): Promise<void> {
         budgetExceeded = true;
         break;
       }
-      mkdirSync(join(workspaceRoot, planner.name), { recursive: true });
+      mkdirSync(planner.workspaceDir, { recursive: true });
       const orchestrator = new PlannerOrchestrator({ planner: planner.adapter, validator: validatePlan, maxRepairAttempts: 2 });
       const startedAt = Date.now();
       try {

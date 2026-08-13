@@ -4,7 +4,7 @@ import { runCliProcess } from '../adapters/cli-agent.ts';
 import { extractChrysResult, extractClaudeResult, type CliMeta, type CostEstimateRates } from '../adapters/cli-meta.ts';
 import { extractJsonPayload } from '../adapters/output.ts';
 import { CollaborationPlanSchema } from './schemas.ts';
-import type { Planner, PlannerInput, PlannerResult } from './planner.ts';
+import { PlannerParseError, type Planner, type PlannerInput, type PlannerResult } from './planner.ts';
 import { renderPlannerPrompt } from './planner-prompt.ts';
 
 export type PlannerOutputMode = 'json_stdout' | 'claude_jsonl' | 'chrys_json';
@@ -59,9 +59,18 @@ export class CliPlannerAdapter implements Planner {
       }));
     }
     if (!text.trim()) throw new Error(`Planner produced no output; stderr: ${stderr.slice(0, 1000)}`);
-    const plan = CollaborationPlanSchema.parse(extractJsonPayload(text));
+    const parsed = CollaborationPlanSchema.safeParse(extractJsonPayload(text));
+    if (!parsed.success) {
+      throw new PlannerParseError(
+        parsed.error.issues.map((issue) => ({
+          code: issue.code,
+          path: issue.path.join('.'),
+          message: issue.message,
+        })),
+      );
+    }
     return {
-      plan,
+      plan: parsed.data,
       meta: {
         costUsd: meta.costUsd,
         durationMs: meta.durationMs,
