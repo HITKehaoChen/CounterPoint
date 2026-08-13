@@ -155,6 +155,8 @@ export type ClaimType = z.infer<typeof ClaimTypeSchema>;
 export const ClaimSchema = z.object({
   id: z.string().min(1),
   positionId: z.string().optional(),
+  nodeRunId: z.string().optional(),
+  workItemId: z.string().optional(),
   statement: z.string().min(1),
   type: ClaimTypeSchema,
   evidenceRefs: z.array(z.string()).default([]),
@@ -226,7 +228,10 @@ export type EvidenceStatus = z.infer<typeof EvidenceStatusSchema>;
 
 export const EvidenceSchema = z.object({
   id: z.string().min(1),
-  deliberationId: z.string().min(1),
+  deliberationId: z.string().optional(),
+  workItemId: z.string().optional(),
+  planId: z.string().optional(),
+  nodeRunId: z.string().optional(),
   kind: z.enum(['command_result', 'manual', 'authoritative_source']),
   source: z.object({
     command: z.string().optional(),
@@ -300,6 +305,82 @@ export const DecisionSchema = z.object({
   ownerId: z.string().min(1),
 });
 export type Decision = z.infer<typeof DecisionSchema>;
+
+export const NodeRunStatusSchema = z.enum([
+  'pending',
+  'running',
+  'waiting_human',
+  'succeeded',
+  'failed',
+  'timed_out',
+  'cancelled',
+  'skipped',
+]);
+export type NodeRunStatus = z.infer<typeof NodeRunStatusSchema>;
+
+export const EffectClassSchema = z.enum(['read_only', 'idempotent', 'non_idempotent']);
+export type EffectClass = z.infer<typeof EffectClassSchema>;
+
+export const AttemptDetailSchema = z.object({
+  attempt: z.number().int().positive(),
+  startedAt: z.string(),
+  finishedAt: z.string(),
+  costUsd: z.number().min(0).default(0),
+  inputTokens: z.number().int().min(0).optional(),
+  outputTokens: z.number().int().min(0).optional(),
+  model: z.string().optional(),
+  error: z.string().optional(),
+});
+
+export const NodeRunSchema = z.object({
+  id: z.string().min(1),
+  workItemId: z.string().min(1),
+  planId: z.string().min(1),
+  planVersion: z.number().int().positive(),
+  graphNodeId: z.string().min(1),
+  role: z.string().min(1),
+  operatorType: z.string().min(1),
+  status: NodeRunStatusSchema,
+  attempt: z.number().int().nonnegative().default(0),
+  attempts: z.array(AttemptDetailSchema).default([]),
+  contextViewId: z.string().optional(),
+  adapterFingerprint: z.record(z.unknown()).optional(),
+  artifactRefs: z.array(z.string()).default([]),
+  evidenceRefs: z.array(z.string()).default([]),
+  claimRefs: z.array(z.string()).default([]),
+  opinionRefs: z.array(z.string()).default([]),
+  outputs: z.record(z.unknown()).default({}),
+  startedAt: z.string().optional(),
+  finishedAt: z.string().optional(),
+  error: z.string().optional(),
+  cancelReason: z.enum(['patch', 'failure_policy', 'human']).optional(),
+  effectClass: EffectClassSchema.default('read_only'),
+});
+export type NodeRun = z.infer<typeof NodeRunSchema>;
+
+export const DecisionOutcomeSchema = z.enum([
+  'resolved',
+  'partially_resolved',
+  'needs_evidence',
+  'blocked',
+  'rejected',
+  'escalated',
+]);
+export type DecisionOutcome = z.infer<typeof DecisionOutcomeSchema>;
+
+export const DecisionRecordSchema = z.object({
+  id: z.string().min(1),
+  workItemId: z.string().min(1),
+  planId: z.string().min(1),
+  planVersion: z.number().int().positive(),
+  outcome: DecisionOutcomeSchema,
+  summary: z.string().min(1),
+  refs: z.array(z.string()).default([]),
+  conditions: z.array(z.string()).default([]),
+  decidedAt: z.string(),
+  ownerId: z.string().min(1),
+});
+export type DecisionRecord = z.infer<typeof DecisionRecordSchema>;
 
 export const OpinionSchema = z.object({
   id: z.string().min(1),
@@ -522,6 +603,10 @@ export const DatabaseSchema = z.object({
   planPatches: z.array(PlanPatchSchema).default([]),
   opinions: z.array(OpinionSchema).default([]),
   humanGateRequests: z.array(HumanGateRequestSchema).default([]),
+  nodeRuns: z.array(NodeRunSchema).default([]),
+  decisionRecords: z.array(DecisionRecordSchema).default([]),
+  evidence: z.array(EvidenceSchema).default([]),
+  claims: z.array(ClaimSchema).default([]),
 });
 export type Database = z.infer<typeof DatabaseSchema>;
 
@@ -606,5 +691,9 @@ export function emptyDatabase(): Database {
     planPatches: [],
     opinions: [],
     humanGateRequests: [],
+    nodeRuns: [],
+    decisionRecords: [],
+    evidence: [],
+    claims: [],
   };
 }
