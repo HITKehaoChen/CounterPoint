@@ -88,7 +88,7 @@ async function main(): Promise<void> {
       workspaceDir: join(workspaceRoot, 'claude-code'),
       adapter: new CliPlannerAdapter({
         command: claudeBin,
-        args: ['-p', '--output-format', 'json', '--dangerously-skip-permissions', '--model', claudeModel],
+        args: ['-p', '--output-format', 'json', '--dangerously-skip-permissions', '--tools', '', '--model', claudeModel],
         outputMode: 'claude_jsonl',
         promptViaStdin: true,
         timeoutMs: plannerTimeoutMs,
