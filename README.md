@@ -150,6 +150,7 @@ stateDiagram-v2
 ## 里程碑路线（按 PRD 第 16 节）
 
 - ✅ **M0 Protocol Kernel**（当前已完成）：状态机、Context Policy、Commit–Reveal、Artifact Registry、Mock/CLI/ACP Adapter、泄漏证明、CLI/最小 API 演示、评估脚手架。
+- ▶ **M0 Planning Contract**：Plan/Validator/Compiler 契约 + 真实 Chrys/Claude Planner 探测（`npm run probe:planner`）。
 - ✅ **M1 Vertical Slice**：Web 创建任务、两个隔离 Worker、Commit–Reveal、Artifact Registry、Timeline 已界面化（默认 Mock，可接本地进程/CLI/ACP）；并已用真实 Agent（Chrys + Claude Code + 独立 Reviewer）跑通第一份真实 Decision Pack，见 [docs/m1-real-slice/](docs/m1-real-slice/)。
 - ▶ **M2 Evidence & Review（下一个）**：把“多个答案”升级为“证据化裁决”——引擎能力已具备，补齐真实模型 Reviewer 与更完整的界面化验证/评审体验。
 - ⬜ **M3 Evaluation**：15–30 个真实历史任务的 A/B/C 对照实验与指标报表。

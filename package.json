@@ -22,6 +22,7 @@
     "demo": "node apps/cli/demo.ts",
     "cli": "node apps/cli/main.ts",
     "slice:real": "node apps/cli/real-slice.ts",
+    "probe:planner": "node apps/cli/planner-probe.ts",
     "eval": "node evals/eval-run.ts"
   },
   "dependencies": {
