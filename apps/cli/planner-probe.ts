@@ -12,6 +12,7 @@ const chrysBin = process.env.CHRYS_BIN ?? 'C:\\Users\\tgyzc\\project\\chrys\\.ve
 const claudeBin = process.env.CLAUDE_BIN ?? 'C:\\Users\\tgyzc\\.local\\bin\\claude.exe';
 const claudeModel = process.env.PLANNER_MODEL ?? 'deepseek-v4-pro[1m]';
 const budgetUsd = Number(process.env.PROBE_BUDGET_USD ?? 6);
+const plannerTimeoutMs = Number(process.env.PLANNER_TIMEOUT_MS ?? 900_000);
 const chrysCostRates = { inputPerMTokenUsd: 5, outputPerMTokenUsd: 25 };
 const workspaceRoot = process.env.PROBE_WORKSPACE ?? join(process.cwd(), 'data', 'probe', 'workspaces');
 const catalog = catalogFromEntries([
@@ -49,7 +50,7 @@ async function main(): Promise<void> {
         command: chrysBin,
         args: ['run', '-a', 'Code', '--json', '-t', '{promptFile}', '-C', '{workspace}'],
         outputMode: 'chrys_json',
-        timeoutMs: 600_000,
+        timeoutMs: plannerTimeoutMs,
         model: 'deepseek-v4-pro',
         provider: 'chrys/deepseek-openai',
         costEstimateRates: chrysCostRates,
@@ -64,7 +65,7 @@ async function main(): Promise<void> {
         args: ['-p', '--output-format', 'json', '--dangerously-skip-permissions', '--model', claudeModel],
         outputMode: 'claude_jsonl',
         promptViaStdin: true,
-        timeoutMs: 600_000,
+        timeoutMs: plannerTimeoutMs,
         model: claudeModel,
         provider: 'claude-code/anthropic-deepseek',
         workspacePath: join(workspaceRoot, 'claude-code'),

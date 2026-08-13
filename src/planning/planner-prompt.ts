@@ -23,6 +23,7 @@ export function renderPlannerPrompt(input: PlannerInput): string {
   for (const [capability, descriptor] of input.catalog.byCapability) {
     lines.push(`- ${capability} (${descriptor.adapterKind}): ${descriptor.tools.join(', ')}`);
   }
+  lines.push('Use ONLY these exact capability names in capabilityRequirements. Do not invent new capability names.');
   lines.push('');
   lines.push('## Operator kinds');
   lines.push('- agent_task { type, instructions }');

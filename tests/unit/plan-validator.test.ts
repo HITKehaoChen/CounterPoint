@@ -16,21 +16,21 @@ test('a structurally valid plan is accepted', () => {
   assert.equal(result.issues.length, 0);
 });
 
-test('duplicate node ids are rejected', () => {
+test('duplicate node ids need revision', () => {
   const plan = validPlan({ nodes: [makeNode(), makeNode()] });
   const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
-  assert.equal(result.verdict, 'rejected');
+  assert.equal(result.verdict, 'needs_revision');
   assert.ok(result.issues.some((issue) => issue.code === 'DUPLICATE_NODE_ID'));
 });
 
-test('unknown dependencies are rejected', () => {
+test('unknown dependencies need revision', () => {
   const plan = validPlan({ nodes: [makeNode({ dependsOn: ['missing'] })] });
   const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
-  assert.equal(result.verdict, 'rejected');
+  assert.equal(result.verdict, 'needs_revision');
   assert.ok(result.issues.some((issue) => issue.code === 'UNKNOWN_DEPENDENCY'));
 });
 
-test('cycles are rejected', () => {
+test('cycles need revision', () => {
   const plan = validPlan({
     nodes: [
       makeNode({ id: 'a', dependsOn: ['b'] }),
@@ -38,14 +38,14 @@ test('cycles are rejected', () => {
     ],
   });
   const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
-  assert.equal(result.verdict, 'rejected');
+  assert.equal(result.verdict, 'needs_revision');
   assert.ok(result.issues.some((issue) => issue.code === 'CYCLE'));
 });
 
-test('unknown capability is rejected', () => {
+test('unknown capability needs revision', () => {
   const plan = validPlan({ nodes: [makeNode({ capabilityRequirements: ['telepathy'] })] });
   const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
-  assert.equal(result.verdict, 'rejected');
+  assert.equal(result.verdict, 'needs_revision');
   assert.ok(result.issues.some((issue) => issue.code === 'UNKNOWN_CAPABILITY'));
 });
 

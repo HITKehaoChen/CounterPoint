@@ -32,7 +32,7 @@ export function collectStructureIssues(input: ValidatePlanInput): ValidationIssu
   const issues: ValidationIssue[] = [];
   const ids = new Set<string>();
   for (const node of plan.nodes) {
-    if (ids.has(node.id)) issues.push({ code: 'DUPLICATE_NODE_ID', path: `nodes.${node.id}`, message: 'node id must be unique', kind: 'schema' });
+    if (ids.has(node.id)) issues.push({ code: 'DUPLICATE_NODE_ID', path: `nodes.${node.id}`, message: 'node id must be unique', kind: 'dag' });
     ids.add(node.id);
     for (const capability of node.capabilityRequirements) {
       if (!catalog.byCapability.has(capability)) {
@@ -73,7 +73,7 @@ export function collectStructureIssues(input: ValidatePlanInput): ValidationIssu
 
 export function finalizeVerdict(issues: ValidationIssue[]): ValidationVerdict {
   if (issues.length === 0) return 'accepted';
-  if (issues.some((issue) => issue.kind === 'schema' || issue.kind === 'dag')) return 'rejected';
+  if (issues.some((issue) => issue.kind === 'schema')) return 'rejected';
   if (issues.some((issue) => issue.kind === 'permission' || issue.kind === 'budget')) return 'needs_human_approval';
   return 'needs_revision';
 }
