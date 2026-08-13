@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { AgentTaskOperator } from '../../src/operators/agent-task.ts';
 import { ToolTaskOperator } from '../../src/operators/tool-task.ts';
 import { VerificationOperator } from '../../src/operators/verification.ts';
+import { IndependentReviewOperator } from '../../src/operators/independent-review.ts';
+import { MockReviewerAdapter } from '../../src/adapters/mock-reviewer.ts';
 import type { OperatorContext, OperatorWriteBatch } from '../../src/operators/operator.ts';
 import { MockAgentAdapter } from '../../src/adapters/mock-agent.ts';
 import { defaultWorkerAScript } from '../helpers.ts';
@@ -80,4 +82,21 @@ test('verification operator commits node-level evidence', async () => {
   assert.equal(batches[0].evidence?.length, 1);
   assert.equal(batches[0].evidence?.[0].status, 'verified');
   assert.deepEqual(result.evidenceRefs, [batches[0].evidence![0].id]);
+});
+
+test('independent review stores a verdict in outputs, not a decision', async () => {
+  const db = emptyDatabase();
+  db.claims.push({ id: 'c1', workItemId: 'wi_test', nodeRunId: 'nr_src', statement: 'x', type: 'fact', evidenceRefs: [] });
+  db.nodeRuns.push(
+    NodeRunSchema.parse({ id: 'nr_src', workItemId: 'wi_test', planId: 'plan_test', planVersion: 1, graphNodeId: 'gn_src', role: 'src', operatorType: 'agent_task', status: 'succeeded' }),
+  );
+  const ctx = makeCtx({
+    graphNode: { ...graphNode(), operator: { type: 'independent_review', rubricRef: 'rubric:1', targetNodeIds: ['src'] } },
+    resolveReviewer: () => new MockReviewerAdapter({ recommendation: 'candidate_a', evidenceSufficiency: 'partial' }),
+    readDb: () => db,
+  });
+  const result = await new IndependentReviewOperator().run(ctx);
+  assert.equal(result.status, 'succeeded');
+  assert.equal((result.outputs as { review?: { recommendation: string } }).review?.recommendation, 'candidate_a');
+  assert.equal(db.decisionRecords.length, 0);
 });

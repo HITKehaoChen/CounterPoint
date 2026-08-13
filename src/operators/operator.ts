@@ -11,6 +11,7 @@ import type { Claim, ContextView, Database, Evidence, NodeRun, WorkItem } from '
 import { AgentTaskOperator } from './agent-task.ts';
 import { ToolTaskOperator } from './tool-task.ts';
 import { VerificationOperator } from './verification.ts';
+import { IndependentReviewOperator } from './independent-review.ts';
 
 export interface OperatorWriteBatch {
   artifacts?: PublishArtifactInput[];
@@ -58,5 +59,6 @@ export function createOperatorRegistry(): OperatorRegistry {
     ['agent_task', new AgentTaskOperator()],
     ['tool_task', new ToolTaskOperator()],
     ['verification', new VerificationOperator()],
+    ['independent_review', new IndependentReviewOperator()],
   ]);
 }
