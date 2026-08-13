@@ -1,4 +1,4 @@
-import type { CollaborationPlan } from './schemas.ts';
+import type { CollaborationPlan, OperatorSpec } from './schemas.ts';
 import type { AutonomyEnvelope } from '../autonomy/autonomy-envelope.ts';
 import type { CapabilityCatalog } from './capabilities.ts';
 import type { WorkItem } from '../schemas.ts';
@@ -78,7 +78,74 @@ export function finalizeVerdict(issues: ValidationIssue[]): ValidationVerdict {
   return 'needs_revision';
 }
 
+function operatorCommands(operator: OperatorSpec): string[] {
+  if (operator.type === 'tool_task' || operator.type === 'verification') return [operator.command];
+  return [];
+}
+
+function isWithinScope(scope: string, allowed: string[]): boolean {
+  const normalized = scope.replaceAll('\\', '/');
+  return allowed.some((item) => {
+    const prefix = item.replaceAll('\\', '/').replace(/\/$/, '');
+    return normalized === prefix || normalized.startsWith(`${prefix}/`);
+  });
+}
+
+export function collectPermissionBudgetIssues(input: ValidatePlanInput): ValidationIssue[] {
+  const { plan, envelope } = input;
+  const issues: ValidationIssue[] = [];
+  for (const node of plan.nodes) {
+    for (const command of operatorCommands(node.operator)) {
+      if (!envelope.allowedTools.includes(command)) {
+        issues.push({ code: 'PERMISSION_TOOL', path: `nodes.${node.id}.operator.command`, message: `tool "${command}" is not in the envelope allowlist`, kind: 'permission' });
+      }
+    }
+    for (const scope of node.contextPolicy.writeScopes) {
+      if (!isWithinScope(scope, envelope.writableScopes)) {
+        issues.push({ code: 'PERMISSION_WRITE_SCOPE', path: `nodes.${node.id}.contextPolicy.writeScopes`, message: `write scope "${scope}" is outside the envelope`, kind: 'permission' });
+      }
+    }
+    if (node.failurePolicy.maxRetries > envelope.maxRounds) {
+      issues.push({ code: 'BUDGET_RETRY_OVER_ROUNDS', path: `nodes.${node.id}.failurePolicy`, message: 'retries exceed envelope rounds', kind: 'budget' });
+    }
+  }
+  const allocation = plan.budgetAllocation;
+  if (
+    allocation.maxTotalAgents > envelope.maxAgents ||
+    allocation.maxTotalRounds > envelope.maxRounds ||
+    allocation.maxTotalTimeMs > envelope.timeBudgetMs
+  ) {
+    issues.push({ code: 'BUDGET_OVER_ENVELOPE', path: 'budgetAllocation', message: 'plan allocation exceeds the envelope', kind: 'budget' });
+  }
+  const nodeTimeTotal = plan.nodes.reduce((sum, node) => sum + node.allocatedBudget.maxTimeMs, 0);
+  if (nodeTimeTotal > envelope.timeBudgetMs) {
+    issues.push({ code: 'BUDGET_SUM_TIME', path: 'nodes', message: `node time budgets sum to ${nodeTimeTotal}ms > envelope ${envelope.timeBudgetMs}ms`, kind: 'budget' });
+  }
+  const levels = new Map<string, number>();
+  const levelOf = (nodeId: string, trail: Set<string> = new Set()): number => {
+    if (trail.has(nodeId)) return 1;
+    const cached = levels.get(nodeId);
+    if (cached !== undefined) return cached;
+    const node = plan.nodes.find((item) => item.id === nodeId);
+    const nextTrail = new Set(trail);
+    nextTrail.add(nodeId);
+    const level = 1 + Math.max(0, ...(node?.dependsOn ?? []).map((dependency) => levelOf(dependency, nextTrail)));
+    levels.set(nodeId, level);
+    return level;
+  };
+  const perLevel = new Map<number, number>();
+  for (const node of plan.nodes) {
+    const level = levelOf(node.id);
+    perLevel.set(level, (perLevel.get(level) ?? 0) + 1);
+  }
+  const maxWidth = Math.max(0, ...perLevel.values());
+  if (maxWidth > envelope.maxParallelism) {
+    issues.push({ code: 'BUDGET_PARALLELISM', path: 'nodes', message: `max parallel width ${maxWidth} > envelope ${envelope.maxParallelism}`, kind: 'budget' });
+  }
+  return issues;
+}
+
 export function validatePlan(input: ValidatePlanInput): ValidationResult {
-  const issues = collectStructureIssues(input);
+  const issues = [...collectStructureIssues(input), ...collectPermissionBudgetIssues(input)];
   return { verdict: finalizeVerdict(issues), issues };
 }
