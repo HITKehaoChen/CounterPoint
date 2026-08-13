@@ -696,6 +696,52 @@ test('human gate operator pauses and resumes', async () => {
 
 ---
 
+## Task 8.5：Execution Contract Hardening（评审补充，完全离线）
+
+> 目标一句话：Execution Graph 中画出的上下文边界与 Agent 实际收到的信息完全一致。
+
+验收清单（每项都有对应测试）：
+
+- [ ] AgentTask 拿到真实 Source 与上游 Artifact 内容：新增
+      `materializeNodeContext({ view, db, workItem, registry })` 返回
+      `VisibleAuthoritySource[]` / `VisibleArtifact[]`；`AgentRunInput` 增
+      `isolationMode?: 'blind'|'shared'|'private'|'sealed'`（默认 blind 保持兼容），
+      `renderAgentPrompt` 按 visibility 描述，不再固定 BLIND；TaskPacket
+      `problem = operator.instructions`、`goals = [objective]`。
+- [ ] Context 只继承依赖祖先 + 显式 `inputRefs`：`buildNodeContextView` 增 `nodes`
+      参数做祖先闭包；真正执行 `includeObjectTypes` / `excludeObjectTypes` /
+      `readScopes`（ref 前缀匹配）；`revealAfter === 消费者节点 id` 时可见。
+      测试：平行 shared 分支互不污染（A→D 不得看到 B→C 的输出）。
+- [ ] `effectClass` 贯穿：`ToolTaskOperatorSpecSchema` / `VerificationOperatorSpecSchema`
+      增 `effectClass`（默认 `read_only`）；Planner Prompt 枚举说明；Validator：
+      `non_idempotent` 节点且计划无 `human_gate` 节点 → `needs_revision`；Compiler 与
+      `GraphNode` 携带 `effectClass`；NodeRun 由 Scheduler（Task 9）复制。
+- [ ] Deliberation 不伪造人工决策：无 `humanGatePolicy` → 输出 Reviewer
+      Verdict/Recommendation 并 `succeeded`，**不调用** `humanDecision`；
+      `verificationPolicy` 经 VerificationOperator 执行（Envelope 权限检查），不硬编码
+      `node --version`。
+- [ ] Claim ID 系统级唯一：`ClaimSchema` 增 `externalId?`；AgentTask 总是
+      `newId('claim')`，模型原始 id 存 `externalId`。
+- [ ] Evidence hash 绑定结果：hash 含 command/args/cwd/exitCode/stdoutHash/stderrHash；
+      Verification `targetRefs` 为空 → `failed` + `VERIFICATION_TARGETS_REQUIRED`
+      （与 `EvidenceSchema` min(1) 对齐）。
+- [ ] Reviewer 按 NodeRun 聚合候选：一个目标 Run 一个匿名候选（A/B/C），含其全部
+      Claims/Artifacts；Reviewer 指纹缺失 → `independence_unknown`，不得把两个空对象
+      判为同一身份。
+- [ ] Ledger：snapshot 含 `attemptCounts`；重复 `reserve` 同一活动 runId 抛
+      `DUPLICATE_RESERVATION`；`settle` 先完整验证再原子提交，超预算不留半提交；
+      `release` 测试针对未结算 Reservation。
+- [ ] Registry：缺 engine 时注册一个抛 `OPERATOR_UNAVAILABLE` 的实现，不允许
+      `undefined` 潜伏。
+- [ ] runtime-error Attempt 进入探测报告：Orchestrator 把 `attemptsDetail` 挂在抛出的
+      error 上，Probe catch 读入 `FixtureResult`。
+- [ ] CI：`ci.yml` 的 push 触发扩到 `codex/**`，分支推送获得真实 CI 证据。
+
+跨节点集成测试（真实字符串传播）：A 发布唯一字符串 Artifact，B 依赖 A 断言收到该
+字符串；无依赖的 C 断言未收到。
+
+---
+
 ## Task 9：Scheduler
 
 **Files:** Create `src/execution/scheduler.ts`；Test `tests/unit/scheduler.test.ts`
