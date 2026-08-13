@@ -188,3 +188,21 @@ test('high risk action without a human gate node needs revision', () => {
   assert.equal(result.verdict, 'needs_revision');
   assert.ok(result.issues.some((issue) => issue.code === 'GATE_REQUIRED_MISSING'));
 });
+
+test('sink independent review node is a valid decision producer', () => {
+  const plan = validPlan({
+    nodes: [
+      makeNode({ id: 'candidate' }),
+      makeNode({
+        id: 'review',
+        dependsOn: ['candidate'],
+        capabilityRequirements: ['independent-review'],
+        operator: { type: 'independent_review', rubricRef: 'rubric:1', targetNodeIds: ['candidate'] },
+        completionCriteria: [{ id: 'c1', kind: 'claim_supported', description: 'review decision', refs: [] }],
+      }),
+    ],
+  });
+  const result = validatePlan({ plan, envelope: validEnvelope(), workItem: validWorkItem(), catalog });
+  assert.equal(result.verdict, 'accepted');
+  assert.equal(result.issues.some((issue) => issue.code === 'SINK_WITHOUT_OUTPUT'), false);
+});

@@ -63,6 +63,8 @@ export function collectStructureIssues(input: ValidatePlanInput): ValidationIssu
   for (const sink of plan.nodes.filter((node) => !dependents.has(node.id))) {
     const producesDecision =
       sink.operator.type === 'human_gate' ||
+      sink.operator.type === 'independent_review' ||
+      sink.operator.type === 'counterpoint_deliberation' ||
       sink.completionCriteria.some((criterion) => ['artifact', 'evidence', 'human_acceptance'].includes(criterion.kind));
     if (!producesDecision) {
       issues.push({ code: 'SINK_WITHOUT_OUTPUT', path: `nodes.${sink.id}`, message: 'sink node must produce a decision, artifact, evidence or human acceptance', kind: 'dag' });

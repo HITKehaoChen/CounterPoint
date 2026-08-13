@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { defaultAutonomyEnvelope, tightenEnvelope } from '../../src/autonomy/autonomy-envelope.ts';
@@ -41,6 +41,28 @@ interface FixtureResult {
   durationMs?: number;
   model?: string;
   error?: string;
+  resumed?: boolean;
+}
+
+function loadResumedResults(): FixtureResult[] {
+  const dir = join(process.cwd(), 'data', 'probe');
+  if (!existsSync(dir)) return [];
+  const files = readdirSync(dir)
+    .filter((name) => /^probe-report-.+\.json$/.test(name))
+    .sort()
+    .reverse();
+  for (const file of files) {
+    try {
+      const report = JSON.parse(readFileSync(join(dir, file), 'utf8')) as { results?: FixtureResult[] };
+      if (!Array.isArray(report.results) || report.results.length === 0) continue;
+      return report.results
+        .filter((row) => row.verdict === 'accepted')
+        .map((row) => ({ ...row, resumed: true }));
+    } catch {
+      continue;
+    }
+  }
+  return [];
 }
 
 async function main(): Promise<void> {
@@ -77,7 +99,7 @@ async function main(): Promise<void> {
     },
   ];
 
-  const results: FixtureResult[] = [];
+  const results: FixtureResult[] = loadResumedResults();
   let spentUsd = 0;
   let budgetExceeded = false;
   let timeBudgetExceeded = false;
@@ -112,6 +134,13 @@ async function main(): Promise<void> {
       reusableEvidence: [],
     };
     for (const planner of planners.filter((item) => plannerFilter.length === 0 || plannerFilter.includes(item.name))) {
+      const alreadyAccepted = results.some(
+        (row) => row.fixture === fixture.id && row.planner === planner.name && row.verdict === 'accepted',
+      );
+      if (alreadyAccepted) {
+        console.log(`[probe] skip ${fixture.id}/${planner.name} (already accepted in prior report)`);
+        continue;
+      }
       if (Date.now() - probeStartedAt > timeBudgetMs) {
         timeBudgetExceeded = true;
         break;
@@ -123,6 +152,7 @@ async function main(): Promise<void> {
       mkdirSync(planner.workspaceDir, { recursive: true });
       const orchestrator = new PlannerOrchestrator({ planner: planner.adapter, validator: validatePlan, maxRepairAttempts: 1 });
       const startedAt = Date.now();
+      console.log(`[probe] start ${fixture.id}/${planner.name} at ${new Date().toISOString()}`);
       try {
         const proposal = await orchestrator.propose(input);
         spentUsd += proposal.totalCostUsd;
@@ -135,6 +165,9 @@ async function main(): Promise<void> {
           topology: proposal.plan ? topologySignature(proposal.plan) : '',
           durationMs: Date.now() - startedAt,
         });
+        console.log(
+          `[probe] done ${fixture.id}/${planner.name} verdict=${proposal.result.verdict} attempts=${proposal.attempts} elapsed=${Date.now() - startedAt}ms spent=$ ${spentUsd.toFixed(4)}`,
+        );
       } catch (error) {
         results.push({
           fixture: fixture.id,
@@ -146,6 +179,7 @@ async function main(): Promise<void> {
           durationMs: Date.now() - startedAt,
           error: error instanceof Error ? error.message : String(error),
         });
+        console.log(`[probe] failed ${fixture.id}/${planner.name} elapsed=${Date.now() - startedAt}ms: ${results[results.length - 1].error}`);
       }
     }
     if (budgetExceeded || timeBudgetExceeded) break;
