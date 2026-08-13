@@ -1,0 +1,58 @@
+{
+  "formatVersion": "planner-probe/0.1.0",
+  "generatedAt": "2026-08-13T03:29:13.623Z",
+  "budgetUsd": 6,
+  "timeBudgetMs": 1200000,
+  "spentUsd": 0.49161,
+  "budgetExceeded": false,
+  "timeBudgetExceeded": false,
+  "results": [
+    {
+      "fixture": "simple-bug",
+      "planner": "chrys",
+      "verdict": "accepted",
+      "attempts": 2,
+      "issueCodes": [],
+      "topology": "[{\"id\":\"confirm-with-test\",\"role\":\"verification\",\"operator\":\"verification\",\"dependsOn\":[\"locate-typo\"],\"visibility\":\"shared\"},{\"id\":\"locate-typo\",\"role\":\"code-analysis\",\"operator\":\"agent_task\",\"dependsOn\":[],\"visibility\":\"shared\"},{\"id\":\"publish-findings\",\"role\":\"tool_task\",\"operator\":\"tool_task\",\"dependsOn\":[\"confirm-with-test\"],\"visibility\":\"shared\"}]",
+      "durationMs": 586960,
+      "resumed": true
+    },
+    {
+      "fixture": "simple-bug",
+      "planner": "claude-code",
+      "verdict": "accepted",
+      "attempts": 2,
+      "issueCodes": [],
+      "topology": "[{\"id\":\"analyze-health-handler\",\"role\":\"analyst\",\"operator\":\"agent_task\",\"dependsOn\":[],\"visibility\":\"shared\"},{\"id\":\"confirm-with-regression-test\",\"role\":\"verifier\",\"operator\":\"verification\",\"dependsOn\":[\"analyze-health-handler\"],\"visibility\":\"shared\"},{\"id\":\"finalize-fix-artifact\",\"role\":\"synthesizer\",\"operator\":\"agent_task\",\"dependsOn\":[\"confirm-with-regression-test\"],\"visibility\":\"shared\"}]",
+      "durationMs": 213930,
+      "resumed": true
+    },
+    {
+      "fixture": "complex-bug",
+      "planner": "chrys",
+      "verdict": "accepted",
+      "attempts": 1,
+      "issueCodes": [],
+      "topology": "[{\"id\":\"n1-analyze-retry-window\",\"role\":\"analyzer\",\"operator\":\"agent_task\",\"dependsOn\":[],\"visibility\":\"shared\"},{\"id\":\"n2-baseline-idempotency\",\"role\":\"verifier\",\"operator\":\"verification\",\"dependsOn\":[],\"visibility\":\"shared\"},{\"id\":\"n3-root-cause-fix\",\"role\":\"root-cause-synthesizer\",\"operator\":\"agent_task\",\"dependsOn\":[\"n1-analyze-retry-window\",\"n2-baseline-idempotency\"],\"visibility\":\"shared\"},{\"id\":\"n4-regression-verification\",\"role\":\"verifier\",\"operator\":\"verification\",\"dependsOn\":[\"n3-root-cause-fix\"],\"visibility\":\"shared\"},{\"id\":\"n5-independent-review\",\"role\":\"reviewer\",\"operator\":\"independent_review\",\"dependsOn\":[\"n3-root-cause-fix\"],\"visibility\":\"shared\"}]",
+      "durationMs": 357586,
+      "resumed": true
+    },
+    {
+      "fixture": "complex-bug",
+      "planner": "claude-code",
+      "verdict": "accepted",
+      "attempts": 1,
+      "issueCodes": [],
+      "topology": "[{\"id\":\"n1-adapter-retry-analysis\",\"role\":\"source_analysis\",\"operator\":\"agent_task\",\"dependsOn\":[],\"visibility\":\"shared\"},{\"id\":\"n2-test-coverage-analysis\",\"role\":\"source_analysis\",\"operator\":\"agent_task\",\"dependsOn\":[],\"visibility\":\"shared\"},{\"id\":\"n3-root-cause-fix\",\"role\":\"root_cause_fix\",\"operator\":\"agent_task\",\"dependsOn\":[\"n1-adapter-retry-analysis\",\"n2-test-coverage-analysis\"],\"visibility\":\"shared\"},{\"id\":\"n4-independent-review\",\"role\":\"independent_review\",\"operator\":\"independent_review\",\"dependsOn\":[\"n1-adapter-retry-analysis\",\"n2-test-coverage-analysis\",\"n3-root-cause-fix\"],\"visibility\":\"shared\"},{\"id\":\"n5-regression-verification\",\"role\":\"verification\",\"operator\":\"verification\",\"dependsOn\":[\"n3-root-cause-fix\"],\"visibility\":\"shared\"}]",
+      "durationMs": 148994
+    }
+  ],
+  "acceptance": {
+    "chrys": true,
+    "claude": true
+  },
+  "diversity": {
+    "chrys": true,
+    "claude-code": true
+  }
+}
