@@ -25,6 +25,130 @@
 
 ---
 
+## 评审修正（2026-08-13，批准 Task 0 并补充五点）
+
+> 本节优先于正文冲突处；任务执行时以本节为准。
+
+### R1 预算预留（Task 2）
+
+`BudgetLedger` 采用 `reserve → settle → release`：
+
+```ts
+export interface LedgerSnapshot {
+  reservations: Record<string, { reservedTimeMs: number; maxTimeMs: number }>;
+  totalSettledTimeMs: number;
+  totalSettledCostUsd: number;
+  totalSettledTokens: number;
+}
+
+export class BudgetLedger {
+  constructor(envelope: AutonomyEnvelope, snapshot?: LedgerSnapshot)
+  reserve(runId: string, nodeBudget: NodeBudget): void   // 预留整笔 maxTimeMs；总预留超 envelope 抛 BUDGET_EXCEEDED
+  settle(runId: string, usage: BudgetUsage): void        // 按实际用量记账并释放剩余预留
+  release(runId: string): void                            // 中断/取消时释放预留
+  canReserve(nodeBudget: NodeBudget): boolean
+  canRetry(runId: string, maxRetries: number): boolean
+  envelopeExhausted(): boolean
+  snapshot(): LedgerSnapshot                              // 可持久化；构造函数恢复
+}
+```
+
+新增测试：两个并行 Ready 节点争抢剩余预算——`maxTotalTimeMs = 100`，两次
+`reserve(runId, { maxTimeMs: 60 })`，第二次抛 `BUDGET_EXCEEDED`；`release` 后允许重新
+`reserve`。
+
+### R2 Operator 写入收口（Task 4–8）
+
+`OperatorContext` 去掉 `db`/`store`，所有写入经 Scheduler 提供的串行回调：
+
+```ts
+export interface OperatorWriteBatch {
+  artifacts?: PublishArtifactInput[];
+  claims?: Claim[];
+  evidence?: Evidence[];
+}
+
+export interface OperatorContext {
+  graphNode; nodeRun; workItem; contextView; workspacePath; envelope;
+  resolveAgent(capability: string): AgentAdapter | undefined;
+  resolveReviewer(capability: string): ReviewerAdapter | undefined;
+  commit(batch: OperatorWriteBatch): string[];             // 同步、串行；返回 artifact refs
+  ledger: BudgetLedger;
+  emit(event: NewEvent): void;                              // 同样由 Scheduler 串行化
+  requestHumanGate(input): HumanGateRequest;                // 串行化，持久化由 Scheduler 完成
+}
+```
+
+Operator 只通过 `commit` / `requestHumanGate` 写入，并只返回 `OperatorResult`；不得直接
+修改 db，不得调用 `store.save()`。唯一例外是 `counterpoint_deliberation`：它驱动现有
+`ProtocolEngine`，由引擎内核自己持久化。Task 4–8 测试中的 `db.claims.push` /
+`db.evidence.push` / `db.humanGateRequests.push` 一律改为经 `commit` / `requestHumanGate`
+shim，并断言 shim 收到对应批次。
+
+### R3 原子 PlanPatch 应用（Task 9/10）
+
+```ts
+scheduler.applyPlanUpdate(input: {
+  previousPlan: CollaborationPlan;
+  updatedPlan: CollaborationPlan;
+  patch: PlanPatch;
+}): void
+```
+
+- 保留 `running/succeeded/failed` 节点；只替换 `pending/ready` 子图；
+- 被取消节点记录 `cancelReason: 'patch'`，**不**从执行历史删除；
+- 新节点重新编译并进入 Ready 计算；
+- 一次调用内原子更新 Plan Version、Execution Graph 与 `plan_patch.applied` 事件；
+- Patch 触及 `running/succeeded` 节点抛 `PATCH_TARGET_IMMUTABLE`。
+
+Task 1 的 `NodeRunSchema` 增补：
+
+```ts
+cancelReason: z.enum(['patch', 'failure_policy', 'human']).optional(),
+effectClass: z.enum(['read_only', 'idempotent', 'non_idempotent']).default('read_only'),
+```
+
+`ToolTaskOperatorSpecSchema` / `VerificationOperatorSpecSchema` 增补同枚举
+`effectClass`（默认 `read_only`）。Task 10 补「修改 running/completed 节点失败」测试。
+
+### R4 恢复语义（Task 9）
+
+Scheduler 构造时处理遗留 `running`：
+
+- `read_only / idempotent`：标记 `failed(error='interrupted; recovered after restart')`，
+  按 failurePolicy 决定是否重试；
+- `non_idempotent`：创建 human gate 请求，节点置 `waiting_human`，**不得自动重试**。
+
+M1 真实切片只允许 `read_only` / `idempotent` 命令。
+
+### R5 Decision Authority（Task 11）
+
+删除公开的 `recordDecision`，唯一入口：
+
+```ts
+export function evaluateAndRecordDecision(opts: {
+  plan: CollaborationPlan;
+  graph: ExecutionGraph;
+  db: Database;
+  ledger: BudgetLedger;
+  ownerId: string;
+}): { evaluation: StopEvaluation; decision?: DecisionRecord }
+```
+
+顺序：评估 Stop Conditions → 校验引用可解析 → 同 `planVersion` 已存在则返回既有记录
+（幂等）→ 原子追加 Decision → `decision.recorded` 事件。`decision` 类 Stop Condition
+匹配规则：存在 DecisionRecord 且其 `refs` 包含该条件 refs（禁止「必须先有 Decision 才能
+生成 Decision」的自指循环）。Task 11 补幂等测试：连续两次调用只产生一条记录。
+
+### R6 Task 13 的 patch 来源
+
+报告增加 `patchSource: 'agent' | 'scripted_fallback'`、`fallbackUsed: boolean`、原始
+Agent 输出与拒绝原因。fallback 只能让 Demo 继续并标记 `mechanics_passed`；M1 DoD 要求
+至少一次 `patchSource === 'agent'` 的合法 Patch。`--fresh` 报告必须展示原始 Agent 输出
+与最终 Patch。
+
+---
+
 ## File Structure
 
 Create:
@@ -689,7 +813,7 @@ test('evidence-grounded patch increments the plan and applies the change', () =>
 
 **Interfaces:**
 - Produces: `evaluateStopConditions(opts: { plan; db; graph }): { satisfied: boolean; outcome?: DecisionOutcome; matched: StopCondition[] }`
-- Produces: `recordDecision(db, input: { workItemId; planId; planVersion; outcome; summary; refs; conditions; ownerId }): DecisionRecord`（append + emit 由调用方处理）
+- Produces: `evaluateAndRecordDecision(opts)`（R5：评估 → 引用校验 → 幂等 → 原子追加 + `decision.recorded`；无公开 `recordDecision`）
 - 匹配规则：`evidence`（refs 全为 `verified`）/ `artifact`（registry 有版本）/ `decision`（db.decisionRecords 存在）/ `human_acceptance`（存在 approved gate）/ `budget_exhausted`（ledger 参数传入）；命中顺序取第一个，`satisfied = matched.length > 0`
 
 - [ ] **Step 1: 写失败测试**
@@ -798,7 +922,7 @@ test('runner plans, schedules and records a decision', async () => {
 - 复杂 Bug Fixture（复用 `PROBE_FIXTURES[1]`）；Planner = Claude Code `deepseek-v4-flash` + `--tools ""`（`PLANNER_MODEL` 可覆盖）；
 - Worker = Chrys + Claude Code（`CHRYS_BIN/CLAUDE_BIN`，沿用 `real-slice.ts` 参数）；Reviewer = Claude Code；Verification = 真实 `npm run typecheck` / `npm test`；
 - 计划中放入一个 `agent_task`「Replan Proposer」：其输出契约含 `planPatch` JSON（引用已验证 Evidence 的 id）；Runner 在节点成功后提交 `ReplanController.submit`；若 Agent 未产出合法 patch，脚本化回退 patch 引用同一条 Evidence；
-- 完成条件：至少一次 Evidence-grounded PlanPatch 被应用、Scheduler 增量取消/新增节点、Stop Condition 满足 → `DecisionRecord`（与 Reviewer Verdict 分开展示）；
+- 完成条件：至少一次 `patchSource === 'agent'` 的 Evidence-grounded PlanPatch 被应用（fallback 仅保 Demo 继续，计 `mechanics_passed`，不计 M1 DoD）、Scheduler 增量取消/新增节点、Stop Condition 满足 → `DecisionRecord`（与 Reviewer Verdict 分开展示）；
 - 报告写入 `docs/m1-autonomous-slice/`（plan 演化、每个 NodeRun 的 attempts/cost、Context Leak Count = 0、Decision 引用解析）；
 - 完成后按 §9.1 执行 `npm run probe:planner -- --fresh --strict` 一次全新验收并归档报告（预计 ≤ 20 分钟时间预算，成本 ≤ $6）。
 
@@ -813,7 +937,7 @@ test('runner plans, schedules and records a decision', async () => {
 ## 测试计划与验收
 
 - 回归：`npm run typecheck`、`npm test`（155 + 新增，全绿）。
-- M1 DoD：目标→规划→验证→编译→调度→改计划→决策全自动；≥1 次 Evidence-grounded PlanPatch；每个 Run 有 Context View、泄漏 = 0；Reviewer 独立性按血缘验证；重启恢复（`running` → `failed`）；`DecisionRecord` 引用可解析；`--fresh --strict` 探测全量通过语义拓扑断言。
+- M1 DoD：目标→规划→验证→编译→调度→改计划→决策全自动；≥1 次 `patchSource === 'agent'` 的 Evidence-grounded PlanPatch；每个 Run 有 Context View、泄漏 = 0；Reviewer 独立性按血缘验证；重启恢复（R4 的 effectClass 规则）；Decision 只经 `evaluateAndRecordDecision` 且幂等；`--fresh --strict` 探测全量通过语义拓扑断言。
 
 ## 执行方式说明
 
