@@ -6,6 +6,7 @@ import { VerificationOperator } from '../../src/operators/verification.ts';
 import { IndependentReviewOperator } from '../../src/operators/independent-review.ts';
 import { MockReviewerAdapter } from '../../src/adapters/mock-reviewer.ts';
 import { CounterpointDeliberationOperator } from '../../src/operators/counterpoint-deliberation.ts';
+import { HumanGateOperator } from '../../src/operators/human-gate.ts';
 import { ProtocolEngine } from '../../src/protocol-engine.ts';
 import { InMemoryStore } from '../../src/store.ts';
 import type { HumanGateRequest } from '../../src/autonomy/human-gate.ts';
@@ -162,4 +163,21 @@ test('deliberation facade pauses at the human gate and resumes to decided', asyn
   const finished = await op.resume(ctx, gates[0], 'approve_once');
   assert.equal(finished.status, 'succeeded');
   assert.equal(db.deliberations[0].state, 'decided');
+});
+
+test('human gate operator pauses and resumes', async () => {
+  const requests: HumanGateRequest[] = [];
+  const ctx = makeCtx({
+    graphNode: { ...graphNode(), operator: { type: 'human_gate', summary: 'prod write needed', options: ['approve_once', 'reject_and_stop'] } },
+    requestHumanGate: (input) => {
+      requests.push(input);
+      return input;
+    },
+  });
+  const op = new HumanGateOperator();
+  const result = await op.run(ctx);
+  assert.equal(result.status, 'waiting_human');
+  assert.equal(requests.length, 1);
+  assert.equal((await op.resume(ctx, requests[0], 'approve_once')).status, 'succeeded');
+  assert.equal((await op.resume(ctx, requests[0], 'reject_and_stop')).status, 'failed');
 });

@@ -13,6 +13,7 @@ import { ToolTaskOperator } from './tool-task.ts';
 import { VerificationOperator } from './verification.ts';
 import { IndependentReviewOperator } from './independent-review.ts';
 import { CounterpointDeliberationOperator } from './counterpoint-deliberation.ts';
+import { HumanGateOperator } from './human-gate.ts';
 import type { ProtocolEngine } from '../protocol-engine.ts';
 
 export interface OperatorWriteBatch {
@@ -63,5 +64,6 @@ export function createOperatorRegistry(deps: { engine?: ProtocolEngine } = {}): 
     ['verification', new VerificationOperator()],
     ['independent_review', new IndependentReviewOperator()],
     ['counterpoint_deliberation', new CounterpointDeliberationOperator(deps.engine as ProtocolEngine)],
+    ['human_gate', new HumanGateOperator()],
   ]);
 }
