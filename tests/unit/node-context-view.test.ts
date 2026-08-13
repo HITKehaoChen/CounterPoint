@@ -5,7 +5,12 @@ import { compilePlan } from '../../src/execution/graph-compiler.ts';
 import { catalogFromEntries } from '../../src/planning/capabilities.ts';
 import { makeNode, validPlan, validWorkItem } from '../helpers/plan-fixtures.ts';
 import { ArtifactRegistry } from '../../src/artifact-registry.ts';
-import { emptyDatabase } from '../../src/schemas.ts';
+import { emptyDatabase, NodeRunSchema } from '../../src/schemas.ts';
+import { AgentTaskOperator } from '../../src/operators/agent-task.ts';
+import { MockAgentAdapter } from '../../src/adapters/mock-agent.ts';
+import { BudgetLedger } from '../../src/execution/budget-ledger.ts';
+import { defaultAutonomyEnvelope } from '../../src/autonomy/autonomy-envelope.ts';
+import type { OperatorContext } from '../../src/operators/operator.ts';
 
 const catalog = catalogFromEntries([{ capability: 'code-analysis', adapterKind: 'mock', tools: ['read_sources'] }]);
 
@@ -103,4 +108,56 @@ test('materialize resolves authority source text and artifact content', () => {
   });
   assert.equal(materialized.authoritySources[0].content, 'source-text');
   assert.equal(materialized.visibleArtifacts[0].content, 'unique-string-123');
+});
+
+test('a published artifact propagates to dependent nodes only', async () => {
+  const db = emptyDatabase();
+  const registry = new ArtifactRegistry(db);
+  const emptyPolicy = { visibility: 'shared' as const, readScopes: [], writeScopes: [], includeObjectTypes: [], excludeObjectTypes: [] };
+  const plan = validPlan({
+    nodes: [
+      makeNode({ id: 'a', contextPolicy: emptyPolicy }),
+      makeNode({ id: 'b', dependsOn: ['a'], contextPolicy: emptyPolicy }),
+      makeNode({ id: 'c', contextPolicy: emptyPolicy }),
+    ],
+  });
+  const graph = compilePlan({ plan, catalog });
+  const script = () => ({
+    summary: 'x',
+    claims: [],
+    unknowns: [],
+    artifactRefs: [],
+    decisionConditions: [],
+    confidence: 0.5,
+    artifacts: [{ logicalName: 'note', type: 'text' as const, content: 'unique-string-123' }],
+    model: 'm',
+  });
+  const nodeRunA = NodeRunSchema.parse({ id: 'nr_a', workItemId: 'wi_test', planId: 'plan_test', planVersion: 1, graphNodeId: 'gn_a', role: 'A', operatorType: 'agent_task', status: 'running' });
+  const ctxA: OperatorContext = {
+    graphNode: graph.nodes[0],
+    nodeRun: nodeRunA,
+    workItem: validWorkItem(),
+    contextView: { id: 'c', runId: 'nr_a', phase: 'node', visible: { authoritySources: [], artifacts: [], claims: [], evidence: [] }, hidden: { agentRuns: [], objectTypes: [] }, tools: { allow: [], deny: [] }, hash: 'h' },
+    workspacePath: 'C:/tmp/prop-test',
+    envelope: defaultAutonomyEnvelope('ws_test'),
+    resolveAgent: () => new MockAgentAdapter(script),
+    resolveReviewer: () => undefined,
+    commit: (batch) => (batch.artifacts ?? []).map((artifact) => registry.publish({ ...artifact, ownerRunId: 'nr_a' }).ref),
+    ledger: new BudgetLedger(defaultAutonomyEnvelope('ws_test')),
+    emit: () => undefined,
+    requestHumanGate: () => {
+      throw new Error('unused');
+    },
+    readDb: () => db,
+    materialize: () => ({ authoritySources: [], visibleArtifacts: [] }),
+  };
+  const resultA = await new AgentTaskOperator().run(ctxA);
+  const producerIndex = new Map([['gn_a', resultA.artifactRefs]]);
+  const producerVisibility = new Map<string, 'shared' | 'private' | 'blind' | 'sealed'>([['gn_a', 'shared']]);
+  const viewB = buildNodeContextView({ node: graph.nodes[1], db, workItem: validWorkItem(), nodes: graph.nodes, producerIndex, producerVisibility, seed: 't' });
+  const materializedB = materializeNodeContext({ view: viewB, db, workItem: validWorkItem() });
+  assert.equal(materializedB.visibleArtifacts[0].content, 'unique-string-123');
+  const viewC = buildNodeContextView({ node: graph.nodes[2], db, workItem: validWorkItem(), nodes: graph.nodes, producerIndex, producerVisibility, seed: 't' });
+  const materializedC = materializeNodeContext({ view: viewC, db, workItem: validWorkItem() });
+  assert.equal(materializedC.visibleArtifacts.length, 0);
 });

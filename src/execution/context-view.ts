@@ -12,7 +12,7 @@ export interface NodeContextViewInput {
   workItem: WorkItem;
   /** Full graph; used to compute the dependency-ancestor closure. */
   nodes: GraphNode[];
-  /** graph node id -> output refs it published so far (claim:/artifact:/evidence:). */
+  /** graph node id -> output refs it published so far (claim:/evidence:/<logicalName>@v<n>). */
   producerIndex: Map<string, string[]>;
   /** graph node id -> its contextPolicy.visibility. Defaults to shared when absent. */
   producerVisibility?: Map<string, Visibility>;
@@ -26,30 +26,38 @@ export interface MaterializedNodeContext {
 
 type RefCategory = 'claim' | 'artifact' | 'evidence';
 
-function splitRefs(refs: string[]): { claims: Set<string>; artifacts: Set<string>; evidence: Set<string> } {
+interface SplitRefs {
+  claims: Set<string>;
+  artifacts: Set<string>;
+  evidence: Set<string>;
+}
+
+function categoryOfRef(ref: string, db: Database): RefCategory | undefined {
+  if (ref.startsWith('claim:')) return 'claim';
+  if (ref.startsWith('evidence:')) return 'evidence';
+  const parsed = parseVersionRef(ref);
+  if (parsed && db.artifacts.some((artifact) => artifact.logicalName === parsed.name)) return 'artifact';
+  return undefined;
+}
+
+function splitRefs(refs: string[], db: Database): SplitRefs {
   const claims = new Set<string>();
   const artifacts = new Set<string>();
   const evidence = new Set<string>();
   for (const ref of refs) {
-    if (ref.startsWith('claim:')) claims.add(ref.slice('claim:'.length));
-    else if (ref.startsWith('artifact:')) artifacts.add(ref);
-    else if (ref.startsWith('evidence:')) evidence.add(ref.slice('evidence:'.length));
+    const category = categoryOfRef(ref, db);
+    if (category === 'claim') claims.add(ref.slice('claim:'.length));
+    else if (category === 'artifact') artifacts.add(ref);
+    else if (category === 'evidence') evidence.add(ref.slice('evidence:'.length));
   }
   return { claims, artifacts, evidence };
-}
-
-function categoryOf(ref: string): RefCategory {
-  if (ref.startsWith('claim:')) return 'claim';
-  if (ref.startsWith('artifact:')) return 'artifact';
-  return 'evidence';
 }
 
 function typeMatches(declared: string, category: RefCategory): boolean {
   return declared === category || declared === `${category}s`;
 }
 
-function allowedByPolicy(node: GraphNode, ref: string): boolean {
-  const category = categoryOf(ref);
+function allowedByPolicy(node: GraphNode, ref: string, category: RefCategory): boolean {
   if (node.contextPolicy.excludeObjectTypes.some((type) => typeMatches(type, category))) return false;
   if (
     node.contextPolicy.includeObjectTypes.length > 0 &&
@@ -82,7 +90,7 @@ function ancestorsOf(nodeId: string, nodes: GraphNode[]): Set<string> {
 }
 
 export function buildNodeContextView(input: NodeContextViewInput): ContextView {
-  const { node, workItem, producerIndex, nodes } = input;
+  const { node, workItem, producerIndex, nodes, db } = input;
   const producerVisibility = input.producerVisibility ?? new Map<string, Visibility>();
   const ancestors = ancestorsOf(node.id, nodes);
   const visibleArtifacts = new Set<string>();
@@ -90,10 +98,13 @@ export function buildNodeContextView(input: NodeContextViewInput): ContextView {
   const visibleEvidence = new Set<string>();
   const hiddenObjectTypes = new Set<string>(node.contextPolicy.excludeObjectTypes);
 
-  const ownInputs = splitRefs(node.inputRefs.filter((ref) => allowedByPolicy(node, ref)));
-  for (const artifact of ownInputs.artifacts) visibleArtifacts.add(artifact);
-  for (const claim of ownInputs.claims) visibleClaims.add(claim);
-  for (const evidenceId of ownInputs.evidence) visibleEvidence.add(evidenceId);
+  for (const ref of node.inputRefs) {
+    const category = categoryOfRef(ref, db);
+    if (!category || !allowedByPolicy(node, ref, category)) continue;
+    if (category === 'claim') visibleClaims.add(ref.slice('claim:'.length));
+    else if (category === 'artifact') visibleArtifacts.add(ref);
+    else visibleEvidence.add(ref.slice('evidence:'.length));
+  }
 
   for (const [producerId, refs] of producerIndex) {
     if (producerId === node.id) continue;
@@ -102,11 +113,11 @@ export function buildNodeContextView(input: NodeContextViewInput): ContextView {
     const producerNode = nodes.find((item) => item.id === producerId);
     const revealedToThisNode = producerNode?.contextPolicy.revealAfter === node.id;
     const visibility = producerVisibility.get(producerId) ?? 'shared';
-    const outputs = splitRefs(refs);
+    const outputs = splitRefs(refs, db);
     if (visibility === 'shared' || revealedToThisNode) {
-      for (const artifact of outputs.artifacts) if (allowedByPolicy(node, `artifact:${artifact}`)) visibleArtifacts.add(artifact);
-      for (const claim of outputs.claims) if (allowedByPolicy(node, `claim:${claim}`)) visibleClaims.add(claim);
-      for (const evidenceId of outputs.evidence) if (allowedByPolicy(node, `evidence:${evidenceId}`)) visibleEvidence.add(evidenceId);
+      for (const artifact of outputs.artifacts) if (allowedByPolicy(node, artifact, 'artifact')) visibleArtifacts.add(artifact);
+      for (const claim of outputs.claims) if (allowedByPolicy(node, `claim:${claim}`, 'claim')) visibleClaims.add(claim);
+      for (const evidenceId of outputs.evidence) if (allowedByPolicy(node, `evidence:${evidenceId}`, 'evidence')) visibleEvidence.add(evidenceId);
     } else {
       hiddenObjectTypes.add(`${visibility}_artifacts`);
       hiddenObjectTypes.add(`${visibility}_claims`);
